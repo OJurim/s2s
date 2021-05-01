@@ -1,6 +1,9 @@
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import itertools
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import os
 import time
 import argparse
@@ -103,6 +106,8 @@ def train(rank, a, h):
     generator.train()
     mpd.train()
     msd.train()
+    total_loss_vec = []
+    epoch_vec = range(max(0, last_epoch), a.training_epochs)
     for epoch in range(max(0, last_epoch), a.training_epochs):
         if rank == 0:
             start = time.time()
@@ -115,6 +120,7 @@ def train(rank, a, h):
             if rank == 0:
                 start_b = time.time()
             x, y, _, y_mel = batch
+            print('The type is:{0} the size is:{1}'.format(type(x), x.size()))
             x = torch.autograd.Variable(x.to(device, non_blocking=True))
             y = torch.autograd.Variable(y.to(device, non_blocking=True))
             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=True))
@@ -225,6 +231,16 @@ def train(rank, a, h):
             print('Time taken for epoch {} is {} sec\n'.format(epoch + 1, int(time.time() - start)))
     # added by us:
     # torch.save(generator.state_dict(), 'generated')
+        total_loss_vec.append(loss_gen_all)
+    fig = plt.figure()  # create a figure, just like in matlab
+    ax = fig.add_subplot(1, 1, 1)  # create a subplot of certain size
+    ax.plot(epoch_vec, total_loss_vec)
+    ax.set_xlabel('epoch')
+    ax.set_ylabel('total loss')
+    ax.set_title("generator total loss")
+    ax.grid()
+    ax.legend()
+    plt.savefig('./total_loss.png')
 
 
 def main():
