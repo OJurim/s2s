@@ -88,7 +88,7 @@ def get_dataset_filelist(a):
 class MelDataset(torch.utils.data.Dataset):
     def __init__(self, training_files, segment_size, n_fft, num_mels,
                  hop_size, win_size, sampling_rate,  fmin, fmax, split=True, shuffle=True, n_cache_reuse=1,
-                 device=None, fmax_loss=None, fine_tuning=False, base_mels_path=None):
+                 device=None, fmax_loss=None, fine_tuning=False, base_mels_path=None, stretching=False):
         self.audio_files = training_files
         random.seed(2345)
         if shuffle:
@@ -110,10 +110,15 @@ class MelDataset(torch.utils.data.Dataset):
         self.fine_tuning = fine_tuning
         self.base_mels_path = base_mels_path
 
+        self.stretching = stretching
+
     def __getitem__(self, index):
         filename = self.audio_files[index]
         if self._cache_ref_count == 0:
-            audio, sampling_rate = load_wav(filename)
+            if self.stretching:
+                audio, sampling_rate = audio_stretcher(filename, stretching_size=0.5, segment_size=20000)
+            else:
+                audio, sampling_rate = load_wav(filename)
             audio = audio / MAX_WAV_VALUE
             if not self.fine_tuning:
                 audio = normalize(audio) * 0.95
@@ -168,3 +173,25 @@ class MelDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.audio_files)
+
+
+def audio_stretcher(file_path, stretching_factor=0.5, segment_size=3500000):
+    # stretching by stretching_size factor
+    from audiotsm import phasevocoder
+    from audiotsm.io.wav import WavReader, WavWriter
+
+    with WavReader(file_path) as reader:
+        with WavWriter('tmp.tmp', reader.channels, reader.samplerate) as writer:
+            tsm = phasevocoder(reader.channels, speed=stretching_factor)
+            tsm.run(reader, writer)
+
+    stretched_sample_rate, stretched_audio = read('tmp.tmp')
+    os.remove("tmp.tmp")
+
+    # padding with zeros to segment_size length
+    stretched_audio = np.pad(stretched_audio, (0, segment_size), 'constant', constant_values=0)
+
+    return stretched_audio, stretched_sample_rate
+
+
+
