@@ -113,17 +113,17 @@ class MelDataset(torch.utils.data.Dataset):
         self.stretching = stretching
 
     def __getitem__(self, index):
-        if index == len(self.audio_files):
+        if index == len(self.audio_files)-1:
             return
-        filename_read = self.audio_files[index-1]
-        filename_sing = self.audio_files[index]
+        filename_read = self.audio_files[index]
+        filename_sing = self.audio_files[index+1]
 
         if self._cache_ref_count == 0:
             audio_read, sampling_rate_read = load_wav(filename_read)
             audio_sing, sampling_rate_sing = load_wav(filename_sing)
             # resample to 16000
-            audio_read = librosa.resample(audio_read, sampling_rate_read, 16000)
-            audio_sing = librosa.resample(audio_sing, sampling_rate_sing, 16000)
+            # audio_read = librosa.resample(audio_read, sampling_rate_read, 16000)
+            # audio_sing = librosa.resample(audio_sing, sampling_rate_sing, 16000)
 
             audio_read = audio_read / MAX_WAV_VALUE
             audio_sing = audio_sing / MAX_WAV_VALUE
@@ -151,15 +151,15 @@ class MelDataset(torch.utils.data.Dataset):
 
         # init split = false for now
         if not self.fine_tuning:
-            if self.split:
-                if audio_read.size(1) >= self.segment_size:
-                    max_audio_start = audio_read.size(1) - self.segment_size
-                    audio_start = random.randint(0, max_audio_start)
-                    audio_read = audio_read[:, audio_start:audio_start+self.segment_size]
-                    audio_sing = audio_sing[:, audio_start:audio_start + self.segment_size]
-                else:
-                    audio_read = torch.nn.functional.pad(audio_read, (0, self.segment_size - audio.size(1)), 'constant')
-                    audio_sing = torch.nn.functional.pad(audio_sing, (0, self.segment_size - audio.size(1)), 'constant')
+            # if self.split:
+            #     if audio_read.size(1) >= self.segment_size:
+            #         max_audio_start = audio_read.size(1) - self.segment_size
+            #         audio_start = random.randint(0, max_audio_start)
+            #         audio_read = audio_read[:, audio_start:audio_start+self.segment_size]
+            #         audio_sing = audio_sing[:, audio_start:audio_start + self.segment_size]
+            #     else:
+            #         audio_read = torch.nn.functional.pad(audio_read, (0, self.segment_size - audio.size(1)), 'constant')
+            #         audio_sing = torch.nn.functional.pad(audio_sing, (0, self.segment_size - audio.size(1)), 'constant')
 
             mel_read = mel_spectrogram(audio_read, self.n_fft, self.num_mels,
                                   self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax,

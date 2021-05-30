@@ -1730,4 +1730,5 @@ ZHIY_read_06_wav_splitted8.wav
 ZHIY_read_06_wav_splitted83.wav
 ZHIY_read_06_wav_splitted88.wav
 ZHIY_read_06_wav_splitted94.wav
-ZHIY_read_06_wav_splitted98.wav
+ZHIY_read_06_wav_splitted98.wav*
+*

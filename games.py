@@ -50,10 +50,10 @@ with open(text_path, 'r') as file_list:
         line_sing = file_list.readline()
         full_path_sing = wav_path + "/" + line_sing[:-1]
         sampling_rate_sing, sing_wav = read(full_path_sing)
-        resampled_sing_wav = librosa.resample(sing_wav, sampling_rate_sing, 16000)
-        write('resampled_audio.wav', int(args[2]), new_audio)
-        if len(resampled_sing_wav) > max_len:
-            max_len = len(resampled_sing_wav)
+        # resampled_sing_wav = librosa.resample(sing_wav, sampling_rate_sing, 16000)
+        # write('resampled_audio.wav', int(args[2]), new_audio)
+        if len(sing_wav) > max_len:
+            max_len = len(sing_wav)
 print(max_len)
 with open(text_path, 'r') as file_list:
     while True:
