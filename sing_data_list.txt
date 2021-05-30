@@ -1,0 +1,1 @@
+./JTAN_sing_15_wav_splitted15.wav/*

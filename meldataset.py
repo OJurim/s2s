@@ -103,47 +103,65 @@ class MelDataset(torch.utils.data.Dataset):
         self.fmin = fmin
         self.fmax = fmax
         self.fmax_loss = fmax_loss
-        self.cached_wav = None
+        self.cached_wav_read = None
+        self.cached_wav_sing = None
         self.n_cache_reuse = n_cache_reuse
         self._cache_ref_count = 0
         self.device = device
         self.fine_tuning = fine_tuning
         self.base_mels_path = base_mels_path
-
         self.stretching = stretching
 
     def __getitem__(self, index):
-        filename = self.audio_files[index]
+        if index == len(self.audio_files):
+            return
+        filename_read = self.audio_files[index-1]
+        filename_sing = self.audio_files[index]
+
         if self._cache_ref_count == 0:
-            if self.stretching:
-                audio, sampling_rate = audio_stretcher(filename, stretching_size=0.5, segment_size=20000)
-            else:
-                audio, sampling_rate = load_wav(filename)
-            audio = audio / MAX_WAV_VALUE
+            audio_read, sampling_rate_read = load_wav(filename_read)
+            audio_sing, sampling_rate_sing = load_wav(filename_sing)
+            # resample to 16000
+            audio_read = librosa.resample(audio_read, sampling_rate_read, 16000)
+            audio_sing = librosa.resample(audio_sing, sampling_rate_sing, 16000)
+
+            audio_read = audio_read / MAX_WAV_VALUE
+            audio_sing = audio_sing / MAX_WAV_VALUE
             if not self.fine_tuning:
-                audio = normalize(audio) * 0.95
-            self.cached_wav = audio
-            if sampling_rate != self.sampling_rate:
-                raise ValueError("{} SR doesn't match target {} SR".format(
-                    sampling_rate, self.sampling_rate))
+                audio_read = normalize(audio_read) * 0.95
+                audio_sing = normalize(audio_sing) * 0.95
+            self.cached_wav_read = audio_read
+            self.cached_wav_sing = audio_sing
+            if sampling_rate_read != self.sampling_rate:
+                raise ValueError("{} read SR doesn't match target {} SR".format(
+                    sampling_rate_read, self.sampling_rate))
+            if sampling_rate_sing != self.sampling_rate:
+                raise ValueError("{} sing SR doesn't match target {} SR".format(
+                    sampling_rate_sing, self.sampling_rate))
             self._cache_ref_count = self.n_cache_reuse
         else:
-            audio = self.cached_wav
+            audio_read = self.cached_wav_read
+            audio_sing = self.cached_wav_sing
             self._cache_ref_count -= 1
 
-        audio = torch.FloatTensor(audio)
-        audio = audio.unsqueeze(0)
+        audio_read = torch.FloatTensor(audio_read)
+        audio_read = audio_read.unsqueeze(0)
+        audio_sing = torch.FloatTensor(audio_sing)
+        audio_sing = audio_sing.unsqueeze(0)
 
+        # init split = false for now
         if not self.fine_tuning:
             if self.split:
-                if audio.size(1) >= self.segment_size:
-                    max_audio_start = audio.size(1) - self.segment_size
+                if audio_read.size(1) >= self.segment_size:
+                    max_audio_start = audio_read.size(1) - self.segment_size
                     audio_start = random.randint(0, max_audio_start)
-                    audio = audio[:, audio_start:audio_start+self.segment_size]
+                    audio_read = audio_read[:, audio_start:audio_start+self.segment_size]
+                    audio_sing = audio_sing[:, audio_start:audio_start + self.segment_size]
                 else:
-                    audio = torch.nn.functional.pad(audio, (0, self.segment_size - audio.size(1)), 'constant')
+                    audio_read = torch.nn.functional.pad(audio_read, (0, self.segment_size - audio.size(1)), 'constant')
+                    audio_sing = torch.nn.functional.pad(audio_sing, (0, self.segment_size - audio.size(1)), 'constant')
 
-            mel = mel_spectrogram(audio, self.n_fft, self.num_mels,
+            mel_read = mel_spectrogram(audio_read, self.n_fft, self.num_mels,
                                   self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax,
                                   center=False)
         else:
@@ -154,44 +172,24 @@ class MelDataset(torch.utils.data.Dataset):
             if len(mel.shape) < 3:
                 mel = mel.unsqueeze(0)
 
-            if self.split:
-                frames_per_seg = math.ceil(self.segment_size / self.hop_size)
+            # if self.split:
+            #     frames_per_seg = math.ceil(self.segment_size / self.hop_size)
+            #
+            #     if audio.size(1) >= self.segment_size:
+            #         mel_start = random.randint(0, mel.size(2) - frames_per_seg - 1)
+            #         mel = mel[:, :, mel_start:mel_start + frames_per_seg]
+            #         audio = audio[:, mel_start * self.hop_size:(mel_start + frames_per_seg) * self.hop_size]
+            #     else:
+            #         mel = torch.nn.functional.pad(mel, (0, frames_per_seg - mel.size(2)), 'constant')
+            #         audio = torch.nn.functional.pad(audio, (0, self.segment_size - audio.size(1)), 'constant')
 
-                if audio.size(1) >= self.segment_size:
-                    mel_start = random.randint(0, mel.size(2) - frames_per_seg - 1)
-                    mel = mel[:, :, mel_start:mel_start + frames_per_seg]
-                    audio = audio[:, mel_start * self.hop_size:(mel_start + frames_per_seg) * self.hop_size]
-                else:
-                    mel = torch.nn.functional.pad(mel, (0, frames_per_seg - mel.size(2)), 'constant')
-                    audio = torch.nn.functional.pad(audio, (0, self.segment_size - audio.size(1)), 'constant')
-
-        mel_loss = mel_spectrogram(audio, self.n_fft, self.num_mels,
+        mel_sing_loss = mel_spectrogram(audio_sing, self.n_fft, self.num_mels,
                                    self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
                                    center=False)
 
-        return (mel.squeeze(), audio.squeeze(0), filename, mel_loss.squeeze())
+        return (mel_read.squeeze(), audio_sing.squeeze(0), filename_read, mel_sing_loss.squeeze())
 
     def __len__(self):
         return len(self.audio_files)
-
-
-def audio_stretcher(file_path, stretching_factor=0.5, segment_size=3500000):
-    # stretching by stretching_size factor
-    from audiotsm import phasevocoder
-    from audiotsm.io.wav import WavReader, WavWriter
-
-    with WavReader(file_path) as reader:
-        with WavWriter('tmp.tmp', reader.channels, reader.samplerate) as writer:
-            tsm = phasevocoder(reader.channels, speed=stretching_factor)
-            tsm.run(reader, writer)
-
-    stretched_sample_rate, stretched_audio = read('tmp.tmp')
-    os.remove("tmp.tmp")
-
-    # padding with zeros to segment_size length
-    stretched_audio = np.pad(stretched_audio, (0, segment_size), 'constant', constant_values=0)
-
-    return stretched_audio, stretched_sample_rate
-
 
 
