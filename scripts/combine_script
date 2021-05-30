@@ -1,0 +1,25 @@
+#!/bin/bash
+mkdir "./combined_words"
+for dir in ./*sing*; do
+  #if[ -d "$dir" ]; then
+    for song in "$dir"/*; do
+      cp "$song" ./combined_words/
+      IFS='/'
+      read -a strarr <<< "$song" 
+      echo "${strarr[2]}" >> sing_data_list.txt
+    
+    done
+  #fi
+done
+for dir in ./*read*; do
+  #if[ -d "$dir" ]; then
+    for song in "$dir"/*; do
+      cp "$song" ./combined_words/
+      IFS='/'
+      read -a strarr <<< "$song" 
+      echo "${strarr[2]}" >> read_data_list.txt
+    done
+  #fi
+done
+shuf read_data_list.txt
+
