@@ -2,6 +2,7 @@ import math
 import os
 import random
 import torch
+import torchvision as tv
 import torch.utils.data
 import numpy as np
 from librosa.util import normalize
@@ -89,6 +90,11 @@ class MelDataset(torch.utils.data.Dataset):
     def __init__(self, training_files, segment_size, n_fft, num_mels,
                  hop_size, win_size, sampling_rate,  fmin, fmax, split=True, shuffle=True, n_cache_reuse=1,
                  device=None, fmax_loss=None, fine_tuning=False, base_mels_path=None, stretching=False):
+
+
+        # added 31.5.21 to prevent empty data loading
+
+        #
         self.audio_files = training_files
         random.seed(2345)
         if shuffle:
@@ -113,10 +119,16 @@ class MelDataset(torch.utils.data.Dataset):
         self.stretching = stretching
 
     def __getitem__(self, index):
+        #if (index % 2) == 1:
+        #    return torch.FloatTensor([1]*80), torch.FloatTensor([1]*80), torch.FloatTensor([]), torch.FloatTensor([1]*80)
+        #print("the index: ", index)
         if index == len(self.audio_files)-1:
-            return
+         #   print(index, len(self.audio_files)-1)
+            return #torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([])
         filename_read = self.audio_files[index]
         filename_sing = self.audio_files[index+1]
+        print(type(filename_read))
+        print(type(filename_sing))
 
         if self._cache_ref_count == 0:
             audio_read, sampling_rate_read = load_wav(filename_read)
@@ -186,8 +198,10 @@ class MelDataset(torch.utils.data.Dataset):
         mel_sing_loss = mel_spectrogram(audio_sing, self.n_fft, self.num_mels,
                                    self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
                                    center=False)
-
-        return (mel_read.squeeze(), audio_sing.squeeze(0), filename_read, mel_sing_loss.squeeze())
+        # added 31.5.21 to prevent empty data loading
+        #return torch.tensor(mel_read.squeeze()), torch.tensor(audio_sing.squeeze(0)), filename_read, mel_sing_loss.squeeze()
+        #print(len(mel_read.squeeze()))
+        return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, mel_sing_loss.squeeze()
 
     def __len__(self):
         return len(self.audio_files)

@@ -96,6 +96,7 @@ def train(rank, a, h):
                               h.hop_size, h.win_size, h.sampling_rate, h.fmin, h.fmax, False, False, n_cache_reuse=0,
                               fmax_loss=h.fmax_for_loss, device=device, fine_tuning=a.fine_tuning,
                               base_mels_path=a.input_mels_dir)
+
         validation_loader = DataLoader(validset, num_workers=1, shuffle=False,
                                        sampler=None,
                                        batch_size=1,
@@ -118,12 +119,15 @@ def train(rank, a, h):
             train_sampler.set_epoch(epoch)
 
         for i, batch in enumerate(train_loader):
-            if i % 2 == 1:
+            #print(i)
+            if (i % 2) == 1:
                 continue
             if rank == 0:
                 start_b = time.time()
+            #print('x type ', type(x))
             x, y, _, y_mel = batch
-
+            #if len(x) == 0:
+            #    continue
             x = torch.autograd.Variable(x.to(device, non_blocking=True))
             y = torch.autograd.Variable(y.to(device, non_blocking=True))
             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=True))
@@ -134,10 +138,10 @@ def train(rank, a, h):
 
             # temporary padding fot size matching
             pad_size = y.shape[2] - y_g_hat.shape[2]
-            pad_dim = (0,pad_size)
+            pad_dim = (0, pad_size)
             y_g_hat = F.pad(y_g_hat, pad_dim, "constant", 0)
 
-            del x
+            # del x
             # torch.cuda.empty_cache()
             y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size,
                                           h.fmin, h.fmax_for_loss)
@@ -174,25 +178,29 @@ def train(rank, a, h):
             #del y_g_hat_mel
             #torch.cuda.empty_cache()
 
-            _, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
-            loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-            # del fmap_s_r, fmap_s_g
-            # torch.cuda.empty_cache()
-            loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
-            # del y_ds_hat_g
-            # torch.cuda.empty_cache()
+            # _, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
+            # loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+            # # del fmap_s_r, fmap_s_g
+            # # torch.cuda.empty_cache()
+            # loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
+            # # del y_ds_hat_g
+            # # torch.cuda.empty_cache()
+            #
+            # _, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
+            # loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
+            # # del fmap_f_r, fmap_f_g
+            # # torch.cuda.empty_cache()
+            # loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
+            # # del y_df_hat_g
+            # # torch.cuda.empty_cache()
 
-            _, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
+            # loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
+            y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
+            y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
             loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-            # del fmap_f_r, fmap_f_g
-            # torch.cuda.empty_cache()
+            loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
             loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
-            # del y_df_hat_g
-            # torch.cuda.empty_cache()
-
-
-
-
+            loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
             loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
 
             loss_gen_all.backward()
@@ -226,14 +234,19 @@ def train(rank, a, h):
                     sw.add_scalar("training/mel_spec_error", mel_error, steps)
 
                 # Validation
-                if steps % a.validation_interval == 0:  # and steps != 0:
+                if steps % a.validation_interval == 0 and steps != 0:
                     generator.eval()
                     torch.cuda.empty_cache()
                     val_err_tot = 0
                     with torch.no_grad():
                         for j, batch in enumerate(validation_loader):
-                            if i % 2 == 1: continue
+                            #print(type(batch))
+                            #print(j)
+                            if j % 2 == 1:
+                                continue
                             x, y, _, y_mel = batch
+                            #if len(x) == 0:
+                            #    continue
                             y_g_hat = generator(x.to(device))
                             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=True))
                             y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate,

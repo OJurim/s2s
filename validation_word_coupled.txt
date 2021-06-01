@@ -688,7 +688,3 @@ VKOW_read_05_wav_splitted82.wav
 VKOW_sing_05_wav_splitted82.wav
 ZHIY_read_03_wav_splitted19.wav
 ZHIY_sing_03_wav_splitted19.wav
-ZHIY_read_06_wav_splitted14.wav
-ZHIY_sing_06_wav_splitted14.wav
-SAMF_read_18_wav_splitted173.wav
-SAMF_sing_18_wav_splitted173.wav
