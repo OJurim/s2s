@@ -119,16 +119,18 @@ class MelDataset(torch.utils.data.Dataset):
         self.stretching = stretching
 
     def __getitem__(self, index):
-        #if (index % 2) == 1:
-        #    return torch.FloatTensor([1]*80), torch.FloatTensor([1]*80), torch.FloatTensor([]), torch.FloatTensor([1]*80)
+
+        # if (index % 2) == 1:
+            # return torch.FloatTensor([1]*80), torch.FloatTensor([1]*80), torch.FloatTensor([]), torch.FloatTensor([1]*80)
         #print("the index: ", index)
-        if index == len(self.audio_files)-1:
+        #if index == len(self.audio_files)-1:
          #   print(index, len(self.audio_files)-1)
-            return #torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([])
+        #    return #torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([])
         filename_read = self.audio_files[index]
-        filename_sing = self.audio_files[index+1]
-        print(type(filename_read))
-        print(type(filename_sing))
+        filename_sing = filename_read.replace("read", "sing")
+
+        # print(type(filename_read))
+        # print(type(filename_sing))
 
         if self._cache_ref_count == 0:
             audio_read, sampling_rate_read = load_wav(filename_read)
@@ -201,6 +203,8 @@ class MelDataset(torch.utils.data.Dataset):
         # added 31.5.21 to prevent empty data loading
         #return torch.tensor(mel_read.squeeze()), torch.tensor(audio_sing.squeeze(0)), filename_read, mel_sing_loss.squeeze()
         #print(len(mel_read.squeeze()))
+        if mel_read is None or audio_sing is None or filename_read is None or mel_sing_loss is None:
+            print(filename_read)
         return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, mel_sing_loss.squeeze()
 
     def __len__(self):

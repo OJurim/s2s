@@ -119,9 +119,9 @@ def train(rank, a, h):
             train_sampler.set_epoch(epoch)
 
         for i, batch in enumerate(train_loader):
-            #print(i)
-            if (i % 2) == 1:
-                continue
+            #print(batch.shape)
+            # if (i % 2) == 1:
+            #     continue
             if rank == 0:
                 start_b = time.time()
             #print('x type ', type(x))
@@ -234,7 +234,7 @@ def train(rank, a, h):
                     sw.add_scalar("training/mel_spec_error", mel_error, steps)
 
                 # Validation
-                if steps % a.validation_interval == 0 and steps != 0:
+                if steps % a.validation_interval == 0:# and steps != 0:
                     generator.eval()
                     torch.cuda.empty_cache()
                     val_err_tot = 0
@@ -242,8 +242,8 @@ def train(rank, a, h):
                         for j, batch in enumerate(validation_loader):
                             #print(type(batch))
                             #print(j)
-                            if j % 2 == 1:
-                                continue
+                            # if j % 2 == 1:
+                            #     continue
                             x, y, _, y_mel = batch
                             #if len(x) == 0:
                             #    continue
