@@ -6,25 +6,36 @@ import numpy as np
 import sys
 import librosa
 
-def audio_stretcher(full_path_read, full_path_sing, stretching_factor=0.5, segment_size=3500000):
+def audio_stretcher(full_path_read, full_path_sing, stretching_factor=0.5, segment_size=3500000,  method="resample"):
+
     # stretching by stretching_size factor
+
     from audiotsm import phasevocoder
     from audiotsm.io.wav import WavReader, WavWriter
-
     with WavReader(full_path_read) as reader:
         with WavWriter('tmp.tmp', reader.channels, reader.samplerate) as writer:
             tsm = phasevocoder(reader.channels, speed=stretching_factor)
             tsm.run(reader, writer)
-
     stretched_sample_rate_read, stretched_audio_read = read('tmp.tmp')
     stretched_sample_rate_sing, stretched_audio_sing = read(full_path_sing)
     os.remove("tmp.tmp")
-
-    # padding with zeros to segment_size length
-    padding_size_read = segment_size - len(stretched_audio_read)
-    stretched_audio_read = np.pad(stretched_audio_read, (0, padding_size_read), 'constant', constant_values=0)
-    padding_size_sing = segment_size - len(stretched_audio_sing)
-    stretched_audio_sing = np.pad(stretched_audio_sing, (0, padding_size_sing), 'constant', constant_values=0)
+    # print(len(stretched_audio_read))
+    # print(len(stretched_audio_sing))
+    if method == "padding":
+        # padding with zeros to segment_size length
+        padding_size_read = segment_size - len(stretched_audio_read)
+        stretched_audio_read = np.pad(stretched_audio_read, (0, padding_size_read), 'constant', constant_values=0)
+        padding_size_sing = segment_size - len(stretched_audio_sing)
+        stretched_audio_sing = np.pad(stretched_audio_sing, (0, padding_size_sing), 'constant', constant_values=0)
+    elif method == "resample":
+        # referring segment size as maximal length
+        samples_num_read = len(stretched_audio_read)
+        dec_factor = samples_num_read/segment_size
+        print((stretched_audio_sing[:]))
+        stretched_audio_sing = librosa.resample(stretched_audio_sing.astype(np.float), stretched_sample_rate_sing,
+                                                stretched_sample_rate_sing*dec_factor)
+        stretched_audio_read = librosa.resample(stretched_audio_read.astype(np.float), stretched_sample_rate_read,
+                                                stretched_sample_rate_read*dec_factor)
 
     print(stretched_audio_read, len(stretched_audio_read))
     print(stretched_audio_sing, len(stretched_audio_sing))
@@ -64,7 +75,10 @@ with open(text_path, 'r') as file_list:
         sampling_rate_read, read_wav = read(full_path_read)
         full_path_sing = wav_path + "/" + line_sing[:-1]
         sampling_rate_sing, sing_wav = read(full_path_sing)
+        print(len(sing_wav))
+        print(len(read_wav))
         stretching_factor = len(read_wav)/len(sing_wav)
+        print(stretching_factor)
         r_wav, r_fs, s_wav, s_fs = audio_stretcher(full_path_read, full_path_sing, stretching_factor, max_len)
         #print(line_read)
         #print(line_sing)
