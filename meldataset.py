@@ -129,7 +129,7 @@ class MelDataset(torch.utils.data.Dataset):
         filename_read = self.audio_files[index]
         filename_sing = filename_read.replace("read", "sing")
 
-        # print(type(filename_read))
+        # print((filename_read))
         # print(type(filename_sing))
 
         if self._cache_ref_count == 0:
@@ -146,12 +146,12 @@ class MelDataset(torch.utils.data.Dataset):
                 audio_sing = normalize(audio_sing) * 0.95
             self.cached_wav_read = audio_read
             self.cached_wav_sing = audio_sing
-            if sampling_rate_read != self.sampling_rate:
-                raise ValueError("{} read SR doesn't match target {} SR".format(
-                    sampling_rate_read, self.sampling_rate))
-            if sampling_rate_sing != self.sampling_rate:
-                raise ValueError("{} sing SR doesn't match target {} SR".format(
-                    sampling_rate_sing, self.sampling_rate))
+            # if sampling_rate_read != self.sampling_rate:
+            #     raise ValueError("{} read SR doesn't match target {} SR".format(
+            #         sampling_rate_read, self.sampling_rate))
+            # if sampling_rate_sing != self.sampling_rate:
+            #     raise ValueError("{} sing SR doesn't match target {} SR".format(
+            #         sampling_rate_sing, self.sampling_rate))
             self._cache_ref_count = self.n_cache_reuse
         else:
             audio_read = self.cached_wav_read
@@ -162,7 +162,8 @@ class MelDataset(torch.utils.data.Dataset):
         audio_read = audio_read.unsqueeze(0)
         audio_sing = torch.FloatTensor(audio_sing)
         audio_sing = audio_sing.unsqueeze(0)
-
+        print(audio_read.shape)
+        print(audio_sing.shape)
         # init split = false for now
         if not self.fine_tuning:
             # if self.split:

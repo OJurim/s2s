@@ -1,1 +1,2 @@
-python train.py --input_wavs_dir ../words_train/mixed_stretched_train_nonstretched_valid/ --input_training_file ../words_train/train_word_coupled.txt --input_validation_file ../words_train/validation_word_coupled.txt --checkpoint_path ./checkpoint_dir/ --config ./checkpoint_dir/config.json
+python train.py --input_wavs_dir ../words_train/combined_words/stretched_data/ --input_training_file ./train_new.txt --input_validation_file ./validation_new.txt --checkpoint_path ./checkpoint_dir/ --config ./config_v3_modified.json
+
