@@ -10,7 +10,6 @@ from env import AttrDict
 from meldataset import mel_spectrogram, MAX_WAV_VALUE, load_wav
 from models import Generator
 import librosa
-import soundfile as sf
 
 #for file_name in os.listdir(FOLDER_PATH):
 #    with wave.open(file_name, "rb") as wave_file:
@@ -54,7 +53,7 @@ def inference(a):
     generator.remove_weight_norm()
     with torch.no_grad():
         for i, filname in enumerate(filelist):
-            wav, sr = sf.read(os.path.join(a.input_wavs_dir, filname))
+            wav, sr = load_wav(os.path.join(a.input_wavs_dir, filname))
             #full_file_name = os.path.join(a.input_wavs_dir, filname)
             #wav_44100, sr = librosa.load(full_file_name, sr=44100)
 
@@ -70,7 +69,7 @@ def inference(a):
             audio = audio.cpu().numpy().astype('int16')
 
             output_file = os.path.join(a.output_dir, os.path.splitext(filname)[0] + '_generated.wav')
-            sf.write(output_file, audio, sr)
+            write(output_file, h.sampling_rate, audio)
             print(output_file)
 
 

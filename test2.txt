@@ -1,4 +1,0 @@
-ZHIY_read_06_wav_splitted14.wav
-ZHIY_sing_06_wav_splitted14.wav
-SAMF_read_18_wav_splitted173.wav
-SAMF_sing_18_wav_splitted173.wav

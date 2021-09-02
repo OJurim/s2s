@@ -1,2 +1,5 @@
 python train.py --input_wavs_dir ../words_train/combined_words/stretched_data/ --input_training_file ./train_new.txt --input_validation_file ./validation_new.txt --checkpoint_path ./checkpoint_dir/ --config ./config_v3_modified.json
 
+python train.py --input_wavs_dir ../NHSS_dir/NHSS_splitted/stretched_data --input_training_file ../NHSS_dir/train_NHSS.txt --input_validation_file ../NHSS_dir/validation_NHSS.txt --checkpoint_path ./checkpoint_dir/ --config ./checkpoint_dir/config.json
+
+python inference.py --checkpoint_dir ./checkpoint_dir/

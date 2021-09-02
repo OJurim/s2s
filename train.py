@@ -26,7 +26,6 @@ from numba import cuda
 from GPUtil import showUtilization as gpu_usage
 
 def train(rank, a, h):
-
     if h.num_gpus > 1:
         init_process_group(backend=h.dist_config['dist_backend'], init_method=h.dist_config['dist_url'],
                            world_size=h.dist_config['world_size'] * h.num_gpus, rank=rank)
@@ -211,9 +210,10 @@ def train(rank, a, h):
                 if steps % a.stdout_interval == 0:
                     with torch.no_grad():
                         mel_error = F.l1_loss(y_mel, y_g_hat_mel).item()
+                        ######
                         print('Steps : {:d}, Gen Loss Total : {:4.3f}, Mel-Spec. Error : {:4.3f}, s/b : {:4.3f}'.
                         format(steps, loss_gen_all, mel_error, time.time() - start_b))
-
+                        ######
                 # checkpointing
                 if steps % a.checkpoint_interval == 0 and steps != 0:
                     checkpoint_path = "{}/g_{:08d}".format(a.checkpoint_path, steps)

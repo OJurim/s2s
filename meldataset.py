@@ -162,8 +162,8 @@ class MelDataset(torch.utils.data.Dataset):
         audio_read = audio_read.unsqueeze(0)
         audio_sing = torch.FloatTensor(audio_sing)
         audio_sing = audio_sing.unsqueeze(0)
-        print(audio_read.shape)
-        print(audio_sing.shape)
+        # print(audio_read.shape)
+        # print(audio_sing.shape)
         # init split = false for now
         if not self.fine_tuning:
             # if self.split:
