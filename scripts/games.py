@@ -97,6 +97,7 @@ def preprocess():
     full_stretch_resampled_path = wav_path + "/stretched_data_22050/"
     if not os.path.exists(full_stretch_resampled_path):
         os.mkdir(full_stretch_resampled_path)
+
     if not os.path.exists(wav_path_22050):
         os.mkdir(wav_path_22050)
     with open(text_path, 'r') as file_list:

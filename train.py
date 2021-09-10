@@ -20,6 +20,8 @@ from meldataset import MelDataset, mel_spectrogram, get_dataset_filelist
 from models import Generator, MultiPeriodDiscriminator, MultiScaleDiscriminator, feature_loss, generator_loss,\
     discriminator_loss
 from utils import plot_spectrogram, scan_checkpoint, load_checkpoint, save_checkpoint
+from f0_package import crepe_pytorch, sampling
+
 
 torch.backends.cudnn.benchmark = True
 from numba import cuda
@@ -104,6 +106,12 @@ def train(rank, a, h):
 
         sw = SummaryWriter(os.path.join(a.checkpoint_path, 'logs'))
 
+    original_dirpath = os.getcwd() #should run from git_repo
+    small_crepe = crepe_pytorch.load_crepe(os.path.join(original_dirpath, 'f0_package/crepe_models/small.pth'), device, 'small')
+
+
+
+
     generator.train()
     mpd.train()
     msd.train()
@@ -124,7 +132,11 @@ def train(rank, a, h):
             if rank == 0:
                 start_b = time.time()
             #print('x type ', type(x))
-            x, y, _, y_mel = batch
+
+            #10.9.21
+            x, y, _, y_mel, sampling_rate_read, sampling_rate_sing = batch
+            #
+
             #if len(x) == 0:
             #    continue
             x = torch.autograd.Variable(x.to(device, non_blocking=True))
@@ -135,7 +147,7 @@ def train(rank, a, h):
 
             y_g_hat = generator(x)
 
-            # temporary padding fot size matching
+            # temporary padding for size matching
             pad_size = y.shape[2] - y_g_hat.shape[2]
             pad_dim = (0, pad_size)
             y_g_hat = F.pad(y_g_hat, pad_dim, "constant", 0)
@@ -193,6 +205,20 @@ def train(rank, a, h):
             # # del y_df_hat_g
             # # torch.cuda.empty_cache()
 
+
+            # f0 loss calculation:
+            # 10.9.21
+            sampler_16k_read = sampling.Sampler(orig_freq=sampling_rate_read, new_freq=16000, device=device)
+            sampler_16k_sing = sampling.Sampler(orig_freq=sampling_rate_sing, new_freq=16000, device=device)
+
+            in_features = py_get_activation(y.squeeze(1), sr, small_crepe,
+                                            layer=18, grad=False, sampler=sampler_16k_sing)
+            in_features = in_features.detach()
+            out_features = py_get_activation(y_g_hat.squeeze(1), sr, small_crepe,
+                                         layer=18, grad=True, sampler=sampler_16k_read)
+            #
+            f0_loss = F.l1_loss(out_features, in_features)
+
             # loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
             y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
             y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
@@ -200,7 +226,10 @@ def train(rank, a, h):
             loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
             loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
             loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
-            loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
+            # 10.9.21
+
+            loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel + h.f0_hp*f0_loss
+            #
 
             loss_gen_all.backward()
             optim_g.step()
@@ -213,6 +242,8 @@ def train(rank, a, h):
                         ######
                         print('Steps : {:d}, Gen Loss Total : {:4.3f}, Mel-Spec. Error : {:4.3f}, s/b : {:4.3f}'.
                         format(steps, loss_gen_all, mel_error, time.time() - start_b))
+
+                        print(f'loss_fm_f = {loss_fm_f},loss_fm_s = {loss_fm_s}, loss_gen_f = {loss_gen_f},loss_gen_s = {loss_gen_s}, loss_mel = {loss_mel}, f0_loss = {h.f0_hp * f0_loss}')
                         ######
                 # checkpointing
                 if steps % a.checkpoint_interval == 0 and steps != 0:
@@ -244,7 +275,7 @@ def train(rank, a, h):
                             #print(j)
                             # if j % 2 == 1:
                             #     continue
-                            x, y, _, y_mel = batch
+                            x, y, _, y_mel, _, _ = batch
                             #if len(x) == 0:
                             #    continue
                             y_g_hat = generator(x.to(device))
@@ -282,6 +313,7 @@ def train(rank, a, h):
         
         if rank == 0:
             print('Time taken for epoch {} is {} sec\n'.format(epoch + 1, int(time.time() - start)))
+
     # added by us:
     # torch.save(generator.state_dict(), 'generated')
         total_loss_vec.append(loss_gen_all)

@@ -131,7 +131,9 @@ class MelDataset(torch.utils.data.Dataset):
 
         # print((filename_read))
         # print(type(filename_sing))
-
+        # 10.9.21
+        sampling_rate_read = sampling_rate_sing = -1
+        #
         if self._cache_ref_count == 0:
             audio_read, sampling_rate_read = load_wav(filename_read)
             audio_sing, sampling_rate_sing = load_wav(filename_sing)
@@ -206,8 +208,9 @@ class MelDataset(torch.utils.data.Dataset):
         #print(len(mel_read.squeeze()))
         if mel_read is None or audio_sing is None or filename_read is None or mel_sing_loss is None:
             print(filename_read)
-        return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, mel_sing_loss.squeeze()
-
+        # 10.9.21
+        return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing
+        #
     def __len__(self):
         return len(self.audio_files)
 
