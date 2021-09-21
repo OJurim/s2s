@@ -132,7 +132,8 @@ class MelDataset(torch.utils.data.Dataset):
         # print((filename_read))
         # print(type(filename_sing))
         # 10.9.21
-        sampling_rate_read = sampling_rate_sing = -1
+        sampling_rate_read = -1
+        sampling_rate_sing = -1
         #
         if self._cache_ref_count == 0:
             audio_read, sampling_rate_read = load_wav(filename_read)

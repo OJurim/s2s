@@ -20,10 +20,11 @@ from meldataset import MelDataset, mel_spectrogram, get_dataset_filelist
 from models import Generator, MultiPeriodDiscriminator, MultiScaleDiscriminator, feature_loss, generator_loss,\
     discriminator_loss
 from utils import plot_spectrogram, scan_checkpoint, load_checkpoint, save_checkpoint
-from f0_package import crepe_pytorch, sampling
+from f0_package import crepe_pytorch, sampling, spectral_feats
 
 
-torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = Trueq
+
 from numba import cuda
 from GPUtil import showUtilization as gpu_usage
 
@@ -107,7 +108,7 @@ def train(rank, a, h):
         sw = SummaryWriter(os.path.join(a.checkpoint_path, 'logs'))
 
     original_dirpath = os.getcwd() #should run from git_repo
-    small_crepe = crepe_pytorch.load_crepe(os.path.join(original_dirpath, 'f0_package/crepe_models/small.pth'), device, 'small')
+    small_crepe = crepe_pytorch.load_crepe(os.path.join(original_dirpath, 'f0_package/small.pth'), device, 'small')
 
 
 
@@ -135,6 +136,7 @@ def train(rank, a, h):
 
             #10.9.21
             x, y, _, y_mel, sampling_rate_read, sampling_rate_sing = batch
+            # print(type(x), x.shape)
             #
 
             #if len(x) == 0:
@@ -208,16 +210,19 @@ def train(rank, a, h):
 
             # f0 loss calculation:
             # 10.9.21
-            sampler_16k_read = sampling.Sampler(orig_freq=sampling_rate_read, new_freq=16000, device=device)
-            sampler_16k_sing = sampling.Sampler(orig_freq=sampling_rate_sing, new_freq=16000, device=device)
+            f0_loss = 0
+            for idx in range(4):
+                sampler_16k_read = sampling.Sampler(orig_freq=sampling_rate_read[idx], new_freq=16000, device=device)
+                sampler_16k_sing = sampling.Sampler(orig_freq=sampling_rate_sing[idx], new_freq=16000, device=device)
+                # print(f'input size is:{y.squeeze(0).shape}')
+                in_features = spectral_feats.py_get_activation(y[idx].squeeze(1), sampling_rate_read[idx], small_crepe,
+                                                layer=18, grad=False, sampler = None)
+                in_features = in_features.detach()
+                out_features = spectral_feats.py_get_activation(y_g_hat[idx].squeeze(1), sampling_rate_sing[idx], small_crepe,
+                                             layer=18, grad=True, sampler=None)
+                f0_loss += F.l1_loss(out_features, in_features)
 
-            in_features = py_get_activation(y.squeeze(1), sr, small_crepe,
-                                            layer=18, grad=False, sampler=sampler_16k_sing)
-            in_features = in_features.detach()
-            out_features = py_get_activation(y_g_hat.squeeze(1), sr, small_crepe,
-                                         layer=18, grad=True, sampler=sampler_16k_read)
-            #
-            f0_loss = F.l1_loss(out_features, in_features)
+
 
             # loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
             y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
@@ -342,7 +347,7 @@ def main():
     parser.add_argument('--config', default='')
     parser.add_argument('--training_epochs', default=3100, type=int)
     parser.add_argument('--stdout_interval', default=5, type=int)
-    parser.add_argument('--checkpoint_interval', default=5000, type=int)
+    parser.add_argument('--checkpoint_interval', default=1000, type=int)
     parser.add_argument('--summary_interval', default=100, type=int)
     parser.add_argument('--validation_interval', default=1000, type=int)
     parser.add_argument('--fine_tuning', default=False, type=bool)

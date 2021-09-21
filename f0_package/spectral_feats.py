@@ -2,7 +2,8 @@ import librosa
 import numpy as np
 import torch
 
-from data_utils.crepe_pytorch import Crepe
+
+from f0_package.crepe_pytorch import Crepe
 
 _NUM_SECS = 4
 _AUDIO_RATE = 16000  # 16 kHz
