@@ -86,7 +86,7 @@ def main():
     a = parser.parse_args()
 
     # config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'generated/archive/config.json')
-    config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config.json')
+    config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config_v1_f0.json')
     with open(config_file) as f:
         data = f.read()
 
@@ -96,11 +96,11 @@ def main():
 
     torch.manual_seed(h.seed)
     global device
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(h.seed)
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
+    # if torch.cuda.is_available():
+    #     torch.cuda.manual_seed(h.seed)
+    #     device = torch.device('cuda')
+    # else:
+    device = torch.device('cpu')
 
     inference(a)
 

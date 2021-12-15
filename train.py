@@ -23,7 +23,7 @@ from utils import plot_spectrogram, scan_checkpoint, load_checkpoint, save_check
 from f0_package import crepe_pytorch, sampling, spectral_feats
 
 
-torch.backends.cudnn.benchmark = Trueq
+torch.backends.cudnn.benchmark = True
 
 from numba import cuda
 from GPUtil import showUtilization as gpu_usage
@@ -118,6 +118,9 @@ def train(rank, a, h):
     msd.train()
     total_loss_vec = []
     epoch_vec = range(max(0, last_epoch), a.training_epochs)
+
+    minimal_loss_gen_total = 1000
+
     for epoch in range(max(0, last_epoch), a.training_epochs):
         if rank == 0:
             start = time.time()
@@ -191,36 +194,37 @@ def train(rank, a, h):
             #del y_g_hat_mel
             #torch.cuda.empty_cache()
 
-            # _, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
-            # loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-            # # del fmap_s_r, fmap_s_g
-            # # torch.cuda.empty_cache()
-            # loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
-            # # del y_ds_hat_g
-            # # torch.cuda.empty_cache()
-            #
-            # _, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
-            # loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-            # # del fmap_f_r, fmap_f_g
-            # # torch.cuda.empty_cache()
-            # loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
-            # # del y_df_hat_g
-            # # torch.cuda.empty_cache()
+            _, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
+            loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+            # del fmap_s_r, fmap_s_g
+            # torch.cuda.empty_cache()
+            loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
+            # del y_ds_hat_g
+            # torch.cuda.empty_cache()
+
+            _, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
+            loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
+            # del fmap_f_r, fmap_f_g
+            # torch.cuda.empty_cache()
+            loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
+            # del y_df_hat_g
+            # torch.cuda.empty_cache()
 
 
             # f0 loss calculation:
             # 10.9.21
             f0_loss = 0
-            for idx in range(4):
-                sampler_16k_read = sampling.Sampler(orig_freq=sampling_rate_read[idx], new_freq=16000, device=device)
-                sampler_16k_sing = sampling.Sampler(orig_freq=sampling_rate_sing[idx], new_freq=16000, device=device)
-                # print(f'input size is:{y.squeeze(0).shape}')
-                in_features = spectral_feats.py_get_activation(y[idx].squeeze(1), sampling_rate_read[idx], small_crepe,
-                                                layer=18, grad=False, sampler = None)
-                in_features = in_features.detach()
-                out_features = spectral_feats.py_get_activation(y_g_hat[idx].squeeze(1), sampling_rate_sing[idx], small_crepe,
-                                             layer=18, grad=True, sampler=None)
-                f0_loss += F.l1_loss(out_features, in_features)
+            if h.pitch_loss == True:
+                for idx in range(4):
+                    # sampler_16k_read = sampling.Sampler(orig_freq=sampling_rate_read[idx], new_freq=16000, device=device)
+                    # sampler_16k_sing = sampling.Sampler(orig_freq=sampling_rate_sing[idx], new_freq=16000, device=device)
+                    # print(f'input size is:{y.squeeze(0).shape}')
+                    in_features = spectral_feats.py_get_activation(y[idx].squeeze(1), sampling_rate_read[idx], small_crepe,
+                                                    layer=18, grad=False, sampler = None)
+                    in_features = in_features.detach()
+                    out_features = spectral_feats.py_get_activation(y_g_hat[idx].squeeze(1), sampling_rate_sing[idx], small_crepe,
+                                                 layer=18, grad=True, sampler=None)
+                    f0_loss += F.l1_loss(out_features, in_features)
 
 
 
@@ -233,7 +237,9 @@ def train(rank, a, h):
             loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
             # 10.9.21
 
-            loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel + h.f0_hp*f0_loss
+            loss_gen_all = h.loss_gen_s_w*loss_gen_s + h.loss_gen_f_w*loss_gen_f + h.loss_fm_s_w*loss_fm_s + h.loss_fm_f_w*loss_fm_f + h.mel_loss_w*loss_mel + h.f0_hp*f0_loss/4
+            # loss_gen_all = h.mel_loss_w*loss_mel + h.f0_hp*f0_loss/4
+
             #
 
             loss_gen_all.backward()
@@ -249,14 +255,29 @@ def train(rank, a, h):
                         format(steps, loss_gen_all, mel_error, time.time() - start_b))
 
                         print(f'loss_fm_f = {loss_fm_f},loss_fm_s = {loss_fm_s}, loss_gen_f = {loss_gen_f},loss_gen_s = {loss_gen_s}, loss_mel = {loss_mel}, f0_loss = {h.f0_hp * f0_loss}')
+                        # print(f'loss_mel = {loss_mel}, f0_loss = {h.f0_hp * f0_loss}')
                         ######
                 # checkpointing
-                if steps % a.checkpoint_interval == 0 and steps != 0:
-                    checkpoint_path = "{}/g_{:08d}".format(a.checkpoint_path, steps)
+                save_best_gen = False
+                if minimal_loss_gen_total > loss_gen_all and steps > h.minimal_steps_for_best:
+                    minimal_loss_gen_total = loss_gen_all
+                    save_best_gen = True
+                    path_best = os.path.join(a.checkpoint_path, "best")
+                    if not os.path.exists(path_best):
+                        os.mkdir(path_best)
+
+                if (steps % a.checkpoint_interval == 0 and steps != 0) or save_best_gen:
+                    if save_best_gen:
+                        checkpoint_path = "{}/best/g_{:08d}".format(a.checkpoint_path, steps)
+                    else:
+                        checkpoint_path = "{}/g_{:08d}".format(a.checkpoint_path, steps)
                     save_checkpoint(checkpoint_path,
                                     {'generator': (generator.module if h.num_gpus > 1 else generator).state_dict()})
-                    checkpoint_path = "{}/do_{:08d}".format(a.checkpoint_path, steps)
-                    save_checkpoint(checkpoint_path, 
+                    if save_best_gen:
+                        checkpoint_path = "{}/best/do_{:08d}".format(a.checkpoint_path, steps)
+                    else:
+                        checkpoint_path = "{}/do_{:08d}".format(a.checkpoint_path, steps)
+                    save_checkpoint(checkpoint_path,
                                     {'mpd': (mpd.module if h.num_gpus > 1
                                                          else mpd).state_dict(),
                                      'msd': (msd.module if h.num_gpus > 1
@@ -266,8 +287,14 @@ def train(rank, a, h):
 
                 # Tensorboard summary logging
                 if steps % a.summary_interval == 0:
+
                     sw.add_scalar("training/gen_loss_total", loss_gen_all, steps)
-                    sw.add_scalar("training/mel_spec_error", mel_error, steps)
+                    sw.add_scalar("training/mel_spec_error", loss_mel, steps)
+                    sw.add_scalar("training/f0_loss", h.f0_hp*f0_loss, steps)
+                    sw.add_scalar("training/loss_gen_s", loss_gen_s, steps)
+                    sw.add_scalar("training/loss_gen_f", loss_gen_f, steps)
+                    sw.add_scalar("training/loss_fm_s", loss_fm_s, steps)
+                    sw.add_scalar("training/loss_fm_f", loss_fm_f, steps)
 
                 # Validation
                 if steps % a.validation_interval == 0:# and steps != 0:
@@ -345,7 +372,7 @@ def main():
     parser.add_argument('--input_validation_file', default='LJSpeech-1.1/validation.txt')
     parser.add_argument('--checkpoint_path', default='cp_hifigan')
     parser.add_argument('--config', default='')
-    parser.add_argument('--training_epochs', default=3100, type=int)
+    parser.add_argument('--training_epochs', default=100000, type=int)
     parser.add_argument('--stdout_interval', default=5, type=int)
     parser.add_argument('--checkpoint_interval', default=1000, type=int)
     parser.add_argument('--summary_interval', default=100, type=int)

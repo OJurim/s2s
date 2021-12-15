@@ -4,3 +4,8 @@ python train.py --input_wavs_dir ../NHSS_dir/NHSS_splitted/stretched_data --inpu
 
 python inference.py --checkpoint_file ./checkpoint_dir/
 git
+
+
+ls -l ../NHSS_dir/NHSS_splitted_16000/ | grep -v total | grep read | tr -s ' ' | cut -d " " -f 5,9 | sort -n -r -u -k1,1 | head -n 40 > uniq_read_by_size.txt
+cat uniq_read_by_size.txt | cut -d " " -f 2 > uniq_read_by_size_names.txt
+cat uniq_read_by_size_names.txt ../NHSS_dir/train_NHSS.txt |sort | uniq -d
