@@ -54,7 +54,7 @@ def plot_tensorflow_log(path):
     plt.plot(step_axis, loss_gen_f, label='adversarial loss MPD')
     plt.plot(step_axis, loss_fm_s, label='feature matching loss MSD')
     plt.plot(step_axis, loss_fm_f, label='feature matching loss MPD')
-    plt.plot(step_axis, f0_loss, label='pitch loss')
+    plt.stem(step_axis, f0_loss, label='pitch loss')
 
     plt.xlabel("Steps",fontsize=15)
     plt.ylabel("Loss",fontsize=15)

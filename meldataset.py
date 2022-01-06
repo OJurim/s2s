@@ -83,11 +83,11 @@ def get_dataset_filelist(a):
         validation_files = [os.path.join(a.input_wavs_dir, x.split('|')[0])
                             # + '.wav')
                             for x in fi.read().split('\n') if len(x) > 0]
-    return training_files, validation_files
+    return training_files, validation_files, a.input_pitch_dir
 
 
 class MelDataset(torch.utils.data.Dataset):
-    def __init__(self, training_files, segment_size, n_fft, num_mels,
+    def __init__(self, pitch_path, training_files, segment_size, n_fft, num_mels,
                  hop_size, win_size, sampling_rate,  fmin, fmax, split=True, shuffle=True, n_cache_reuse=1,
                  device=None, fmax_loss=None, fine_tuning=False, base_mels_path=None, stretching=False):
 
@@ -117,6 +117,7 @@ class MelDataset(torch.utils.data.Dataset):
         self.fine_tuning = fine_tuning
         self.base_mels_path = base_mels_path
         self.stretching = stretching
+        self.pitch_path = pitch_path
 
     def __getitem__(self, index):
 
@@ -128,7 +129,8 @@ class MelDataset(torch.utils.data.Dataset):
         #    return #torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([]), torch.FloatTensor([])
         filename_read = self.audio_files[index]
         filename_sing = filename_read.replace("read", "sing")
-
+        filename_pitch = filename_read.replace("read", "pitch").split('/')[-1].split('.')[0]
+        filename_pitch = filename_pitch + '.pt'
         # print((filename_read))
         # print(type(filename_sing))
         # 10.9.21
@@ -210,7 +212,11 @@ class MelDataset(torch.utils.data.Dataset):
         if mel_read is None or audio_sing is None or filename_read is None or mel_sing_loss is None:
             print(filename_read)
         # 10.9.21
-        return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing
+
+        pitch_file_path = self.pitch_path + '/' + filename_pitch
+
+        return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, \
+               mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing, pitch_file_path
         #
     def __len__(self):
         return len(self.audio_files)

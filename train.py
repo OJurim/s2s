@@ -21,6 +21,7 @@ from models import Generator, MultiPeriodDiscriminator, MultiScaleDiscriminator,
     discriminator_loss
 from utils import plot_spectrogram, scan_checkpoint, load_checkpoint, save_checkpoint
 from f0_package import crepe_pytorch, sampling, spectral_feats
+import glob
 
 
 torch.backends.cudnn.benchmark = True
@@ -78,9 +79,9 @@ def train(rank, a, h):
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
     scheduler_d = torch.optim.lr_scheduler.ExponentialLR(optim_d, gamma=h.lr_decay, last_epoch=last_epoch)
 
-    training_filelist, validation_filelist = get_dataset_filelist(a)
+    training_filelist, validation_filelist, pitch_path = get_dataset_filelist(a)
 
-    trainset = MelDataset(training_filelist, h.segment_size, h.n_fft, h.num_mels,
+    trainset = MelDataset(pitch_path, training_filelist, h.segment_size, h.n_fft, h.num_mels,
                           h.hop_size, h.win_size, h.sampling_rate, h.fmin, h.fmax, n_cache_reuse=0,
                           shuffle=False if h.num_gpus > 1 else True, fmax_loss=h.fmax_for_loss, device=device,
                           fine_tuning=a.fine_tuning, base_mels_path=a.input_mels_dir)
@@ -90,11 +91,11 @@ def train(rank, a, h):
     train_loader = DataLoader(trainset, num_workers=h.num_workers, shuffle=False,
                               sampler=train_sampler,
                               batch_size=h.batch_size,
-                              pin_memory=True,
+                              pin_memory=False,
                               drop_last=True)
 
     if rank == 0:
-        validset = MelDataset(validation_filelist, h.segment_size, h.n_fft, h.num_mels,
+        validset = MelDataset(pitch_path, validation_filelist, h.segment_size, h.n_fft, h.num_mels,
                               h.hop_size, h.win_size, h.sampling_rate, h.fmin, h.fmax, False, False, n_cache_reuse=0,
                               fmax_loss=h.fmax_for_loss, device=device, fine_tuning=a.fine_tuning,
                               base_mels_path=a.input_mels_dir)
@@ -138,7 +139,7 @@ def train(rank, a, h):
             #print('x type ', type(x))
 
             #10.9.21
-            x, y, _, y_mel, sampling_rate_read, sampling_rate_sing = batch
+            x, y, _, y_mel, sampling_rate_read, sampling_rate_sing, y_pitch_feat = batch
             # print(type(x), x.shape)
             #
 
@@ -214,18 +215,19 @@ def train(rank, a, h):
             # f0 loss calculation:
             # 10.9.21
             f0_loss = 0
-            if h.pitch_loss == True:
-                for idx in range(4):
+            if h.pitch_loss == True and steps % h.calc_pitch_loss_steps_denom == 0:
+                for idx in range(h.batch_size):
                     # sampler_16k_read = sampling.Sampler(orig_freq=sampling_rate_read[idx], new_freq=16000, device=device)
                     # sampler_16k_sing = sampling.Sampler(orig_freq=sampling_rate_sing[idx], new_freq=16000, device=device)
                     # print(f'input size is:{y.squeeze(0).shape}')
-                    in_features = spectral_feats.py_get_activation(y[idx].squeeze(1), sampling_rate_read[idx], small_crepe,
-                                                    layer=18, grad=False, sampler = None)
-                    in_features = in_features.detach()
+                    # in_features = spectral_feats.py_get_activation(y[idx].squeeze(1), sampling_rate_read[idx], small_crepe,
+                    #                                 layer=18, grad=False, sampler = None)
+                    # in_features = in_features.detach()
+                    in_features = torch.load(y_pitch_feat[idx])
                     out_features = spectral_feats.py_get_activation(y_g_hat[idx].squeeze(1), sampling_rate_sing[idx], small_crepe,
                                                  layer=18, grad=True, sampler=None)
                     f0_loss += F.l1_loss(out_features, in_features)
-
+                f0_loss = f0_loss/h.batch_size
 
 
             # loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
@@ -237,7 +239,7 @@ def train(rank, a, h):
             loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
             # 10.9.21
 
-            loss_gen_all = h.loss_gen_s_w*loss_gen_s + h.loss_gen_f_w*loss_gen_f + h.loss_fm_s_w*loss_fm_s + h.loss_fm_f_w*loss_fm_f + h.mel_loss_w*loss_mel + h.f0_hp*f0_loss/4
+            loss_gen_all = h.loss_gen_s_w*loss_gen_s + h.loss_gen_f_w*loss_gen_f + h.loss_fm_s_w*loss_fm_s + h.loss_fm_f_w*loss_fm_f + h.mel_loss_w*loss_mel + h.f0_hp*f0_loss
             # loss_gen_all = h.mel_loss_w*loss_mel + h.f0_hp*f0_loss/4
 
             #
@@ -268,14 +270,27 @@ def train(rank, a, h):
 
                 if (steps % a.checkpoint_interval == 0 and steps != 0) or save_best_gen:
                     if save_best_gen:
+
+                        checkpoint_path = glob.glob("{}/best/g_*".format(a.checkpoint_path))
+                        if len(checkpoint_path) > 0:
+                            os.remove(checkpoint_path[0])
                         checkpoint_path = "{}/best/g_{:08d}".format(a.checkpoint_path, steps)
                     else:
+                        checkpoint_path = glob.glob("{}/g_*".format(a.checkpoint_path))
+                        if len(checkpoint_path) > 0:
+                            os.remove(checkpoint_path[0])
                         checkpoint_path = "{}/g_{:08d}".format(a.checkpoint_path, steps)
                     save_checkpoint(checkpoint_path,
                                     {'generator': (generator.module if h.num_gpus > 1 else generator).state_dict()})
                     if save_best_gen:
+                        checkpoint_path = glob.glob("{}/best/do_*".format(a.checkpoint_path))
+                        if len(checkpoint_path) > 0:
+                            os.remove(checkpoint_path[0])
                         checkpoint_path = "{}/best/do_{:08d}".format(a.checkpoint_path, steps)
                     else:
+                        checkpoint_path = glob.glob("{}/do_*".format(a.checkpoint_path))
+                        if len(checkpoint_path) > 0:
+                            os.remove(checkpoint_path[0])
                         checkpoint_path = "{}/do_{:08d}".format(a.checkpoint_path, steps)
                     save_checkpoint(checkpoint_path,
                                     {'mpd': (mpd.module if h.num_gpus > 1
@@ -307,7 +322,7 @@ def train(rank, a, h):
                             #print(j)
                             # if j % 2 == 1:
                             #     continue
-                            x, y, _, y_mel, _, _ = batch
+                            x, y, _, y_mel, _, _, _ = batch
                             #if len(x) == 0:
                             #    continue
                             y_g_hat = generator(x.to(device))
@@ -368,6 +383,7 @@ def main():
     parser.add_argument('--group_name', default=None)
     parser.add_argument('--input_wavs_dir', default='LJSpeech-1.1/wavs')
     parser.add_argument('--input_mels_dir', default='ft_dataset')
+    parser.add_argument('--input_pitch_dir', required=True)
     parser.add_argument('--input_training_file', default='LJSpeech-1.1/training.txt')
     parser.add_argument('--input_validation_file', default='LJSpeech-1.1/validation.txt')
     parser.add_argument('--checkpoint_path', default='cp_hifigan')
