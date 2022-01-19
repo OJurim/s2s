@@ -83,11 +83,11 @@ def get_dataset_filelist(a):
         validation_files = [os.path.join(a.input_wavs_dir, x.split('|')[0])
                             # + '.wav')
                             for x in fi.read().split('\n') if len(x) > 0]
-    return training_files, validation_files, a.input_pitch_dir
+    return training_files, validation_files, a.input_pitch_dir, a.input_sine_pitch_dir
 
 
 class MelDataset(torch.utils.data.Dataset):
-    def __init__(self, pitch_path, training_files, segment_size, n_fft, num_mels,
+    def __init__(self, sine_pitch_path, pitch_path, training_files, segment_size, n_fft, num_mels,
                  hop_size, win_size, sampling_rate,  fmin, fmax, split=True, shuffle=True, n_cache_reuse=1,
                  device=None, fmax_loss=None, fine_tuning=False, base_mels_path=None, stretching=False):
 
@@ -118,6 +118,7 @@ class MelDataset(torch.utils.data.Dataset):
         self.base_mels_path = base_mels_path
         self.stretching = stretching
         self.pitch_path = pitch_path
+        self.sine_pitch_path = sine_pitch_path
 
     def __getitem__(self, index):
 
@@ -131,6 +132,15 @@ class MelDataset(torch.utils.data.Dataset):
         filename_sing = filename_read.replace("read", "sing")
         filename_pitch = filename_read.replace("read", "pitch").split('/')[-1].split('.')[0]
         filename_pitch = filename_pitch + '.pt'
+
+        filename_sine_pitch = filename_read.replace("read", "sine_pitch").split('/')[-1]
+        sine_pitch_file_path = self.sine_pitch_path + '/' + filename_sine_pitch
+        sine_pitch_wav, sine_pitch_sr = load_wav(sine_pitch_file_path)
+        sine_pitch_wav = sine_pitch_wav / MAX_WAV_VALUE
+        if not self.fine_tuning:
+            sine_pitch_wav = normalize(sine_pitch_wav) * 0.95
+
+
         # print((filename_read))
         # print(type(filename_sing))
         # 10.9.21
@@ -149,6 +159,7 @@ class MelDataset(torch.utils.data.Dataset):
             if not self.fine_tuning:
                 audio_read = normalize(audio_read) * 0.95
                 audio_sing = normalize(audio_sing) * 0.95
+                sine_pitch_wav = normalize(sine_pitch_wav) * 0.95
             self.cached_wav_read = audio_read
             self.cached_wav_sing = audio_sing
             # if sampling_rate_read != self.sampling_rate:
@@ -167,6 +178,8 @@ class MelDataset(torch.utils.data.Dataset):
         audio_read = audio_read.unsqueeze(0)
         audio_sing = torch.FloatTensor(audio_sing)
         audio_sing = audio_sing.unsqueeze(0)
+        sine_pitch_wav = torch.FloatTensor(sine_pitch_wav)
+        sine_pitch_wav = sine_pitch_wav.unsqueeze(0)
         # print(audio_read.shape)
         # print(audio_sing.shape)
         # init split = false for now
@@ -215,8 +228,12 @@ class MelDataset(torch.utils.data.Dataset):
 
         pitch_file_path = self.pitch_path + '/' + filename_pitch
 
+        sine_pitch_mel = mel_spectrogram(sine_pitch_wav, self.n_fft, self.num_mels,
+                                       self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
+                                       center=False)
+
         return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, \
-               mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing, pitch_file_path
+               mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing, pitch_file_path, sine_pitch_mel.squeeze()
         #
     def __len__(self):
         return len(self.audio_files)

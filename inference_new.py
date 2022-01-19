@@ -53,8 +53,10 @@ def inference(a):
     generator.eval()
     generator.remove_weight_norm()
     with torch.no_grad():
-        for i, filname in enumerate(filelist):
-            wav, sr = load_wav(os.path.join(a.input_wavs_dir, filname))
+        for i, filename in enumerate(filelist):
+            wav, sr = load_wav(os.path.join(a.input_wavs_dir, filename))
+            pitch_filename = filename.replace('read', 'sine_pitch')
+            pitch, _ = load_wav(os.path.join(a.input_pitch_dir, pitch_filename))
             # wav, sr = sf.read(os.path.join(a.input_wavs_dir, filname))
             # full_file_name = os.path.join(a.input_wavs_dir, filname)
             #wav_44100, sr = librosa.load(full_file_name, sr=44100)
@@ -65,12 +67,15 @@ def inference(a):
             wav = wav / MAX_WAV_VALUE
             wav = torch.FloatTensor(wav).to(device)
             x = get_mel(wav.unsqueeze(0))
-            y_g_hat = generator(x)
+            pitch = pitch / MAX_WAV_VALUE
+            pitch = torch.FloatTensor(pitch).to(device)
+            pitch = get_mel(pitch.unsqueeze(0))
+            y_g_hat = generator(x, pitch)
             audio = y_g_hat.squeeze()
             audio = audio * MAX_WAV_VALUE
             audio = audio.cpu().numpy().astype('int16')
 
-            output_file = os.path.join(a.output_dir, os.path.splitext(filname)[0] + '_generated.wav')
+            output_file = os.path.join(a.output_dir, os.path.splitext(filename)[0] + '_generated.wav')
             write(output_file, sr, audio)
             # sf.write(output_file, audio, sr)
             print(output_file)
@@ -81,6 +86,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_wavs_dir', default='test_files')
+    parser.add_argument('--input_pitch_dir', default='/home/ohadmochly@staff.technion.ac.il/git_repo/small_data_files/sine_pitch/')
     parser.add_argument('--output_dir', default='generated_files')
     parser.add_argument('--checkpoint_file', required=True)
     a = parser.parse_args()

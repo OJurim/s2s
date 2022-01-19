@@ -81,6 +81,12 @@ class Generator(torch.nn.Module):
         self.conv_pre = weight_norm(Conv1d(80, h.upsample_initial_channel, 7, 1, padding=3))
         resblock = ResBlock1 if h.resblock == '1' else ResBlock2
 
+        #pitch down sample layers
+        # self.down_p_t0 = nn.Conv1d(80, pdim, 3, stride=1, padding=1)
+        # self.down_p_t1 = nn.Conv1d((pdim), (pdim), 5, stride=2, padding=2)
+        # self.down_p_t2 = nn.Conv1d((pdim), (pdim), 5, stride=2, padding=2)
+        # self.down_p_t3 = nn.Conv1d((pdim), (pdim), 5, stride=2, padding=2)
+
         self.ups = nn.ModuleList()
         for i, (u, k) in enumerate(zip(h.upsample_rates, h.upsample_kernel_sizes)):
             self.ups.append(weight_norm(
@@ -97,11 +103,15 @@ class Generator(torch.nn.Module):
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
 
-    def forward(self, x):
+    def forward(self, x, y_sine_pitch_mel):
         x = self.conv_pre(x)
+        y = self.conv_pre(y_sine_pitch_mel)
         for i in range(self.num_upsamples):
             x = F.leaky_relu(x, LRELU_SLOPE)
             x = self.ups[i](x)
+            y = F.leaky_relu(y, LRELU_SLOPE)
+            y = self.ups[i](y)
+            x = (x+y)/2
             xs = None
             for j in range(self.num_kernels):
                 if xs is None:

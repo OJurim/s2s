@@ -79,9 +79,9 @@ def train(rank, a, h):
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
     scheduler_d = torch.optim.lr_scheduler.ExponentialLR(optim_d, gamma=h.lr_decay, last_epoch=last_epoch)
 
-    training_filelist, validation_filelist, pitch_path = get_dataset_filelist(a)
+    training_filelist, validation_filelist, pitch_path, sine_pitch_path = get_dataset_filelist(a)
 
-    trainset = MelDataset(pitch_path, training_filelist, h.segment_size, h.n_fft, h.num_mels,
+    trainset = MelDataset(sine_pitch_path, pitch_path, training_filelist, h.segment_size, h.n_fft, h.num_mels,
                           h.hop_size, h.win_size, h.sampling_rate, h.fmin, h.fmax, n_cache_reuse=0,
                           shuffle=False if h.num_gpus > 1 else True, fmax_loss=h.fmax_for_loss, device=device,
                           fine_tuning=a.fine_tuning, base_mels_path=a.input_mels_dir)
@@ -95,7 +95,7 @@ def train(rank, a, h):
                               drop_last=True)
 
     if rank == 0:
-        validset = MelDataset(pitch_path, validation_filelist, h.segment_size, h.n_fft, h.num_mels,
+        validset = MelDataset(sine_pitch_path, pitch_path, validation_filelist, h.segment_size, h.n_fft, h.num_mels,
                               h.hop_size, h.win_size, h.sampling_rate, h.fmin, h.fmax, False, False, n_cache_reuse=0,
                               fmax_loss=h.fmax_for_loss, device=device, fine_tuning=a.fine_tuning,
                               base_mels_path=a.input_mels_dir)
@@ -139,7 +139,7 @@ def train(rank, a, h):
             #print('x type ', type(x))
 
             #10.9.21
-            x, y, _, y_mel, sampling_rate_read, sampling_rate_sing, y_pitch_feat = batch
+            x, y, _, y_mel, sampling_rate_read, sampling_rate_sing, y_pitch_feat, y_sine_pitch_mel = batch
             # print(type(x), x.shape)
             #
 
@@ -149,9 +149,11 @@ def train(rank, a, h):
             y = torch.autograd.Variable(y.to(device, non_blocking=True))
             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=True))
             y = y.unsqueeze(1)
+            y_sine_pitch_mel = torch.autograd.Variable(y_sine_pitch_mel.to(device, non_blocking=True))
+
             # print(sum([p.numel() for p in generator.parameters() if p.requires_grad]))
 
-            y_g_hat = generator(x)
+            y_g_hat = generator(x, y_sine_pitch_mel)
 
             # temporary padding for size matching
             pad_size = y.shape[2] - y_g_hat.shape[2]
@@ -384,6 +386,7 @@ def main():
     parser.add_argument('--input_wavs_dir', default='LJSpeech-1.1/wavs')
     parser.add_argument('--input_mels_dir', default='ft_dataset')
     parser.add_argument('--input_pitch_dir', required=True)
+    parser.add_argument('--input_sine_pitch_dir', required=True)
     parser.add_argument('--input_training_file', default='LJSpeech-1.1/training.txt')
     parser.add_argument('--input_validation_file', default='LJSpeech-1.1/validation.txt')
     parser.add_argument('--checkpoint_path', default='cp_hifigan')
