@@ -79,6 +79,8 @@ class Generator(torch.nn.Module):
         self.num_kernels = len(h.resblock_kernel_sizes)
         self.num_upsamples = len(h.upsample_rates)
         self.conv_pre = weight_norm(Conv1d(80, h.upsample_initial_channel, 7, 1, padding=3))
+        self.conv_pre_sine_pitch = weight_norm(Conv1d(80, h.upsample_initial_channel, 7, 1, padding=3))
+
         resblock = ResBlock1 if h.resblock == '1' else ResBlock2
 
         #pitch down sample layers
@@ -93,11 +95,31 @@ class Generator(torch.nn.Module):
                 ConvTranspose1d(h.upsample_initial_channel//(2**i), h.upsample_initial_channel//(2**(i+1)),
                                 k, u, padding=(k-u)//2)))
 
+        self.downs_sin_pitch = nn.ModuleList()
+        num_of_channels = 1
+        for i, (u, k) in enumerate(zip(h.upsample_rates, h.upsample_kernel_sizes)):
+            self.downs_sin_pitch.append(weight_norm(
+                Conv1d(num_of_channels, ((num_of_channels+20)//20)*20,
+                                k, u, padding=(k-u)//2)))
+            num_of_channels = ((num_of_channels+20)//20)*20
+
+        self.ups_sine_pitch = nn.ModuleList()
+        for i, (u, k) in enumerate(zip(h.upsample_rates, h.upsample_kernel_sizes)):
+            self.ups_sine_pitch.append(weight_norm(
+                ConvTranspose1d(h.upsample_initial_channel // (2 ** i), h.upsample_initial_channel // (2 ** (i + 1)),
+                                k, u, padding=(k - u) // 2)))
+
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = h.upsample_initial_channel//(2**(i+1))
             for j, (k, d) in enumerate(zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes)):
                 self.resblocks.append(resblock(h, ch, k, d))
+
+        self.resblocks_pitch = nn.ModuleList()
+        for i in range(len(self.ups)):
+            ch = h.upsample_initial_channel // (2 ** (i + 1))
+            for j, (k, d) in enumerate(zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes)):
+                self.resblocks_pitch.append(resblock(h, ch, k, d))
 
         self.conv_post = weight_norm(Conv1d(ch, 1, 7, 1, padding=3))
         self.ups.apply(init_weights)
@@ -105,20 +127,28 @@ class Generator(torch.nn.Module):
 
     def forward(self, x, y_sine_pitch_mel):
         x = self.conv_pre(x)
-        y = self.conv_pre(y_sine_pitch_mel)
+        y = y_sine_pitch_mel
+        for i in range(self.num_upsamples):
+            y = self.downs_sin_pitch[i](y)
+        y = self.conv_pre_sine_pitch(y)
         for i in range(self.num_upsamples):
             x = F.leaky_relu(x, LRELU_SLOPE)
             x = self.ups[i](x)
             y = F.leaky_relu(y, LRELU_SLOPE)
-            y = self.ups[i](y)
-            x = (x+y)/2
+            y = self.ups_sine_pitch[i](y)
+            # x = (x + y) / 2 #V1
             xs = None
             for j in range(self.num_kernels):
                 if xs is None:
                     xs = self.resblocks[i*self.num_kernels+j](x)
+                    ys = self.resblocks_pitch[i*self.num_kernels+j](y) #V3
                 else:
                     xs += self.resblocks[i*self.num_kernels+j](x)
+                    ys += self.resblocks_pitch[i * self.num_kernels + j](y) #V3
+            ys = ys / self.num_kernels
             x = xs / self.num_kernels
+            # y = ys /self.num_kernels
+            x = (x + ys) / 2  # V2
         x = F.leaky_relu(x)
         x = self.conv_post(x)
         x = torch.tanh(x)

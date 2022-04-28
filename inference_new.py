@@ -5,10 +5,12 @@ import os
 import argparse
 import json
 import torch
+import numpy as np
 from scipy.io.wavfile import write
 from env import AttrDict
 from meldataset import mel_spectrogram, MAX_WAV_VALUE, load_wav
 from models import Generator
+
 import librosa
 import soundfile as sf
 
@@ -29,7 +31,7 @@ def load_checkpoint(filepath, device):
 
 
 def get_mel(x):
-    return mel_spectrogram(x, h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax)
+    return mel_spectrogram(x, h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax, h.upsample_rates)
 
 
 def scan_checkpoint(cp_dir, prefix):
@@ -69,8 +71,14 @@ def inference(a):
             x = get_mel(wav.unsqueeze(0))
             pitch = pitch / MAX_WAV_VALUE
             pitch = torch.FloatTensor(pitch).to(device)
-            pitch = get_mel(pitch.unsqueeze(0))
-            y_g_hat = generator(x, pitch)
+
+            upsample_factor = np.prod(h.upsample_rates, initial=1)
+            if (len(pitch.squeeze(0)) % upsample_factor) != 0:
+                padding_size = (0, upsample_factor - (len(pitch.squeeze(0)) % upsample_factor))
+                pitch = torch.nn.functional.pad(pitch, padding_size, mode='constant', value=0).unsqueeze(0)
+
+            # pitch = get_mel(pitch.unsqueeze(0))
+            y_g_hat = generator(x, pitch.unsqueeze(0))
             audio = y_g_hat.squeeze()
             audio = audio * MAX_WAV_VALUE
             audio = audio.cpu().numpy().astype('int16')

@@ -187,11 +187,17 @@ class Sampler(torch.nn.Module):
                     right_padding = max(0, end_index_of_last_window + 1 - current_wave_len)
 
                     left_padding = max(0, -first_index)
+
                     if left_padding != 0 or right_padding != 0:
                         wave_to_conv = torch.nn.functional.pad(wave_to_conv, (left_padding, right_padding))
+                        print(f'size after padding {wave_to_conv.shape}')
+
                     if i == 0:
                         waves_to_conv = torch.zeros([self.first_indices.size(0), num_channels,
                                                      wave_to_conv.size(-1)], device=self.device)
+                    print(f'left is {waves_to_conv[i].shape}')
+                    print(f'right is {wave_to_conv.shape}')
+
                     waves_to_conv[i] = wave_to_conv
                 waves_to_conv = waves_to_conv.permute(1, 0, 2)
 

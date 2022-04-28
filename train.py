@@ -82,7 +82,7 @@ def train(rank, a, h):
     training_filelist, validation_filelist, pitch_path, sine_pitch_path = get_dataset_filelist(a)
 
     trainset = MelDataset(sine_pitch_path, pitch_path, training_filelist, h.segment_size, h.n_fft, h.num_mels,
-                          h.hop_size, h.win_size, h.sampling_rate, h.fmin, h.fmax, n_cache_reuse=0,
+                          h.hop_size, h.win_size, h.sampling_rate, h.upsample_rates, h.fmin, h.fmax, n_cache_reuse=0,
                           shuffle=False if h.num_gpus > 1 else True, fmax_loss=h.fmax_for_loss, device=device,
                           fine_tuning=a.fine_tuning, base_mels_path=a.input_mels_dir)
 
@@ -96,7 +96,7 @@ def train(rank, a, h):
 
     if rank == 0:
         validset = MelDataset(sine_pitch_path, pitch_path, validation_filelist, h.segment_size, h.n_fft, h.num_mels,
-                              h.hop_size, h.win_size, h.sampling_rate, h.fmin, h.fmax, False, False, n_cache_reuse=0,
+                              h.hop_size, h.win_size, h.sampling_rate, h.upsample_rates, h.fmin, h.fmax, False, False, n_cache_reuse=0,
                               fmax_loss=h.fmax_for_loss, device=device, fine_tuning=a.fine_tuning,
                               base_mels_path=a.input_mels_dir)
 
@@ -131,20 +131,11 @@ def train(rank, a, h):
             train_sampler.set_epoch(epoch)
 
         for i, batch in enumerate(train_loader):
-            #print(batch.shape)
-            # if (i % 2) == 1:
-            #     continue
             if rank == 0:
                 start_b = time.time()
-            #print('x type ', type(x))
 
-            #10.9.21
             x, y, _, y_mel, sampling_rate_read, sampling_rate_sing, y_pitch_feat, y_sine_pitch_mel = batch
-            # print(type(x), x.shape)
-            #
 
-            #if len(x) == 0:
-            #    continue
             x = torch.autograd.Variable(x.to(device, non_blocking=True))
             y = torch.autograd.Variable(y.to(device, non_blocking=True))
             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=True))
@@ -156,14 +147,14 @@ def train(rank, a, h):
             y_g_hat = generator(x, y_sine_pitch_mel)
 
             # temporary padding for size matching
-            pad_size = y.shape[2] - y_g_hat.shape[2]
-            pad_dim = (0, pad_size)
-            y_g_hat = F.pad(y_g_hat, pad_dim, "constant", 0)
+            # pad_size = y.shape[2] - y_g_hat.shape[2]
+            # pad_dim = (0, pad_size)
+            # y_g_hat = F.pad(y_g_hat, pad_dim, "constant", 0)
 
             # del x
             # torch.cuda.empty_cache()
             y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size,
-                                          h.fmin, h.fmax_for_loss)
+                                          h.fmin, h.fmax_for_loss, h.upsample_rates)
 
             optim_d.zero_grad()
 
@@ -192,7 +183,7 @@ def train(rank, a, h):
             optim_g.zero_grad()
 
             # L1 Mel-Spectrogram Loss
-            loss_mel = F.l1_loss(y_mel, y_g_hat_mel) * 45
+            loss_mel = F.l1_loss(y_mel, y_g_hat_mel)
 
             #del y_g_hat_mel
             #torch.cuda.empty_cache()
@@ -239,9 +230,20 @@ def train(rank, a, h):
             loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
             loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
             loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
+
+            loss_energy = 0
+            # loss_energy = F.l1_loss(abs(y), abs(y_g_hat), reduction='none') # vector of l1 differences
+            # loss_energy = loss_energy/torch.max(loss_energy) # normalization
+            # loss_energy = torch.sum(loss_energy)/loss_energy.size(dim=2) # mean
+            # loss_energy = F.l1_loss(abs(y), abs(y_g_hat))
+            loss_waveform = F.l1_loss(y, y_g_hat)
+
             # 10.9.21
 
-            loss_gen_all = h.loss_gen_s_w*loss_gen_s + h.loss_gen_f_w*loss_gen_f + h.loss_fm_s_w*loss_fm_s + h.loss_fm_f_w*loss_fm_f + h.mel_loss_w*loss_mel + h.f0_hp*f0_loss
+            loss_gen_all = h.loss_gen_s_w*loss_gen_s + h.loss_gen_f_w*loss_gen_f + h.loss_fm_s_w*loss_fm_s + \
+                           h.loss_fm_f_w*loss_fm_f + h.mel_loss_w*loss_mel + h.f0_hp*f0_loss + \
+                           h.loss_energy_w*loss_energy + h.loss_waveform_w*loss_waveform
+
             # loss_gen_all = h.mel_loss_w*loss_mel + h.f0_hp*f0_loss/4
 
             #
@@ -258,7 +260,10 @@ def train(rank, a, h):
                         print('Steps : {:d}, Gen Loss Total : {:4.3f}, Mel-Spec. Error : {:4.3f}, s/b : {:4.3f}'.
                         format(steps, loss_gen_all, mel_error, time.time() - start_b))
 
-                        print(f'loss_fm_f = {loss_fm_f},loss_fm_s = {loss_fm_s}, loss_gen_f = {loss_gen_f},loss_gen_s = {loss_gen_s}, loss_mel = {loss_mel}, f0_loss = {h.f0_hp * f0_loss}')
+                        print(f'loss_fm_f = {h.loss_fm_f_w*loss_fm_f},loss_fm_s = {h.loss_fm_s_w*loss_fm_s},'
+                              f' loss_gen_f = {h.loss_gen_f_w*loss_gen_f},loss_gen_s = {h.loss_gen_s_w*loss_gen_s},'
+                              f' loss_mel = {h.mel_loss_w*loss_mel}, f0_loss = {h.f0_hp * f0_loss}, loss_energy = '
+                              f'{h.loss_energy_w*loss_energy}, waveform_loss = {h.loss_waveform_w*loss_waveform}')
                         # print(f'loss_mel = {loss_mel}, f0_loss = {h.f0_hp * f0_loss}')
                         ######
                 # checkpointing
@@ -312,9 +317,11 @@ def train(rank, a, h):
                     sw.add_scalar("training/loss_gen_f", loss_gen_f, steps)
                     sw.add_scalar("training/loss_fm_s", loss_fm_s, steps)
                     sw.add_scalar("training/loss_fm_f", loss_fm_f, steps)
+                    sw.add_scalar("training/loss_energy", loss_energy, steps)
+                    sw.add_scalar("training/loss_waveform", loss_waveform, steps)
 
                 # Validation
-                if steps % a.validation_interval == 0:# and steps != 0:
+                if steps % a.validation_interval == 0 and steps != 0:
                     generator.eval()
                     torch.cuda.empty_cache()
                     val_err_tot = 0
@@ -331,7 +338,7 @@ def train(rank, a, h):
                             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=True))
                             y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate,
                                                           h.hop_size, h.win_size,
-                                                          h.fmin, h.fmax_for_loss)
+                                                          h.fmin, h.fmax_for_loss, h.upsample_rates)
                             pad_size = y_mel.shape[2] - y_g_hat_mel.shape[2]
                             pad_dim = (0, pad_size)
                             y_g_hat_mel = F.pad(y_g_hat_mel, pad_dim, "constant", 0)
@@ -346,7 +353,7 @@ def train(rank, a, h):
                                 sw.add_audio('generated/y_hat_{}'.format(j), y_g_hat[0], steps, h.sampling_rate)
                                 y_hat_spec = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels,
                                                              h.sampling_rate, h.hop_size, h.win_size,
-                                                             h.fmin, h.fmax)
+                                                             h.fmin, h.fmax, h.upsample_rates)
                                 sw.add_figure('generated/y_hat_spec_{}'.format(j),
                                               plot_spectrogram(y_hat_spec.squeeze(0).cpu().numpy()), steps)
 

@@ -47,11 +47,17 @@ mel_basis = {}
 hann_window = {}
 
 
-def mel_spectrogram(y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin, fmax, center=False):
+def mel_spectrogram(y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin, fmax, upsample_rates, center=False):
     if torch.min(y) < -1.:
         print('min value is ', torch.min(y))
     if torch.max(y) > 1.:
         print('max value is ', torch.max(y))
+
+    # padding to length of multiplication of 256 (to fit generator up sampling layers)
+    upsample_factor = np.prod(upsample_rates, initial=1)
+    if (len(y.squeeze(0)) % upsample_factor) != 0:
+        padding_size = (0, upsample_factor - (len(y.squeeze(0)) % upsample_factor))
+        y = torch.nn.functional.pad(y, padding_size, mode='constant', value=0)
 
     global mel_basis, hann_window
     if fmax not in mel_basis:
@@ -88,7 +94,7 @@ def get_dataset_filelist(a):
 
 class MelDataset(torch.utils.data.Dataset):
     def __init__(self, sine_pitch_path, pitch_path, training_files, segment_size, n_fft, num_mels,
-                 hop_size, win_size, sampling_rate,  fmin, fmax, split=True, shuffle=True, n_cache_reuse=1,
+                 hop_size, win_size, sampling_rate, upsample_rates, fmin, fmax, split=True, shuffle=True, n_cache_reuse=1,
                  device=None, fmax_loss=None, fine_tuning=False, base_mels_path=None, stretching=False):
 
 
@@ -119,6 +125,7 @@ class MelDataset(torch.utils.data.Dataset):
         self.stretching = stretching
         self.pitch_path = pitch_path
         self.sine_pitch_path = sine_pitch_path
+        self.upsample_rates = upsample_rates
 
     def __getitem__(self, index):
 
@@ -180,6 +187,13 @@ class MelDataset(torch.utils.data.Dataset):
         audio_sing = audio_sing.unsqueeze(0)
         sine_pitch_wav = torch.FloatTensor(sine_pitch_wav)
         sine_pitch_wav = sine_pitch_wav.unsqueeze(0)
+
+        # padding to length of multiplication of 256 (to fit generator up sampling layers)
+        upsample_factor = np.prod(self.upsample_rates, initial=1)
+        if (len(audio_sing.squeeze(0)) % upsample_factor) != 0:
+            padding_size = (0, upsample_factor - (len(audio_sing.squeeze(0)) % upsample_factor))
+            audio_sing = torch.nn.functional.pad(audio_sing, padding_size, mode='constant', value=0)
+
         # print(audio_read.shape)
         # print(audio_sing.shape)
         # init split = false for now
@@ -195,7 +209,7 @@ class MelDataset(torch.utils.data.Dataset):
             #         audio_sing = torch.nn.functional.pad(audio_sing, (0, self.segment_size - audio.size(1)), 'constant')
 
             mel_read = mel_spectrogram(audio_read, self.n_fft, self.num_mels,
-                                  self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax,
+                                  self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax, self.upsample_rates,
                                   center=False)
         else:
             mel = np.load(
@@ -217,7 +231,8 @@ class MelDataset(torch.utils.data.Dataset):
             #         audio = torch.nn.functional.pad(audio, (0, self.segment_size - audio.size(1)), 'constant')
 
         mel_sing_loss = mel_spectrogram(audio_sing, self.n_fft, self.num_mels,
-                                   self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
+                                   self.sampling_rate, self.hop_size, self.win_size, self.fmin,
+                                   self.fmax_loss, self.upsample_rates,
                                    center=False)
         # added 31.5.21 to prevent empty data loading
         #return torch.tensor(mel_read.squeeze()), torch.tensor(audio_sing.squeeze(0)), filename_read, mel_sing_loss.squeeze()
@@ -227,13 +242,16 @@ class MelDataset(torch.utils.data.Dataset):
         # 10.9.21
 
         pitch_file_path = self.pitch_path + '/' + filename_pitch
+        if (len(sine_pitch_wav.squeeze(0)) % upsample_factor) != 0:
+            padding_size = (0, upsample_factor - (len(sine_pitch_wav.squeeze(0)) % upsample_factor))
+            sine_pitch_wav = torch.nn.functional.pad(sine_pitch_wav, padding_size, mode='constant', value=0)
 
-        sine_pitch_mel = mel_spectrogram(sine_pitch_wav, self.n_fft, self.num_mels,
-                                       self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
-                                       center=False)
+        # sine_pitch_mel = mel_spectrogram(sine_pitch_wav, self.n_fft, self.num_mels,
+        #                                self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
+        #                                self.upsample_rates, center=False)
 
         return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, \
-               mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing, pitch_file_path, sine_pitch_mel.squeeze()
+               mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing, pitch_file_path, sine_pitch_wav
         #
     def __len__(self):
         return len(self.audio_files)
