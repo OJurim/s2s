@@ -95,13 +95,6 @@ class Generator(torch.nn.Module):
                 ConvTranspose1d(h.upsample_initial_channel//(2**i), h.upsample_initial_channel//(2**(i+1)),
                                 k, u, padding=(k-u)//2)))
 
-        self.downs_sin_pitch = nn.ModuleList()
-        num_of_channels = 1
-        for i, (u, k) in enumerate(zip(h.upsample_rates, h.upsample_kernel_sizes)):
-            self.downs_sin_pitch.append(weight_norm(
-                Conv1d(num_of_channels, ((num_of_channels+20)//20)*20,
-                                k, u, padding=(k-u)//2)))
-            num_of_channels = ((num_of_channels+20)//20)*20
 
         self.ups_sine_pitch = nn.ModuleList()
         for i, (u, k) in enumerate(zip(h.upsample_rates, h.upsample_kernel_sizes)):
@@ -127,10 +120,7 @@ class Generator(torch.nn.Module):
 
     def forward(self, x, y_sine_pitch_mel):
         x = self.conv_pre(x)
-        y = y_sine_pitch_mel
-        for i in range(self.num_upsamples):
-            y = self.downs_sin_pitch[i](y)
-        y = self.conv_pre_sine_pitch(y)
+        y = self.conv_pre_sine_pitch(y_sine_pitch_mel)
         for i in range(self.num_upsamples):
             x = F.leaky_relu(x, LRELU_SLOPE)
             x = self.ups[i](x)

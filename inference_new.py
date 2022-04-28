@@ -72,13 +72,8 @@ def inference(a):
             pitch = pitch / MAX_WAV_VALUE
             pitch = torch.FloatTensor(pitch).to(device)
 
-            upsample_factor = np.prod(h.upsample_rates, initial=1)
-            if (len(pitch.squeeze(0)) % upsample_factor) != 0:
-                padding_size = (0, upsample_factor - (len(pitch.squeeze(0)) % upsample_factor))
-                pitch = torch.nn.functional.pad(pitch, padding_size, mode='constant', value=0).unsqueeze(0)
-
-            # pitch = get_mel(pitch.unsqueeze(0))
-            y_g_hat = generator(x, pitch.unsqueeze(0))
+            pitch = get_mel(pitch.unsqueeze(0))
+            y_g_hat = generator(x, pitch)
             audio = y_g_hat.squeeze()
             audio = audio * MAX_WAV_VALUE
             audio = audio.cpu().numpy().astype('int16')

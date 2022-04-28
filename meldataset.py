@@ -246,12 +246,12 @@ class MelDataset(torch.utils.data.Dataset):
             padding_size = (0, upsample_factor - (len(sine_pitch_wav.squeeze(0)) % upsample_factor))
             sine_pitch_wav = torch.nn.functional.pad(sine_pitch_wav, padding_size, mode='constant', value=0)
 
-        # sine_pitch_mel = mel_spectrogram(sine_pitch_wav, self.n_fft, self.num_mels,
-        #                                self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
-        #                                self.upsample_rates, center=False)
+        sine_pitch_mel = mel_spectrogram(sine_pitch_wav, self.n_fft, self.num_mels,
+                                       self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
+                                       self.upsample_rates, center=False)
 
         return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, \
-               mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing, pitch_file_path, sine_pitch_wav
+               mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing, pitch_file_path, sine_pitch_mel
         #
     def __len__(self):
         return len(self.audio_files)
