@@ -73,9 +73,9 @@ def inference(a):
             pitch = torch.FloatTensor(pitch).to(device)
 
             pitch = get_mel(pitch.unsqueeze(0))
-            y_g_hat = generator(x, pitch)
+            y_g_hat = generator(x, pitch, in_inference=True)
             audio = y_g_hat.squeeze()
-            audio = audio * MAX_WAV_VALUE
+            audio = audio[1, :] * MAX_WAV_VALUE
             audio = audio.cpu().numpy().astype('int16')
 
             output_file = os.path.join(a.output_dir, os.path.splitext(filename)[0] + '_generated.wav')

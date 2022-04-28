@@ -72,6 +72,56 @@ class ResBlock2(torch.nn.Module):
             remove_weight_norm(l)
 
 
+class ResBlock3(torch.nn.Module):
+    def __init__(self, h, channels, kernel_size=3, dilation=(1, 3, 5)):
+        super(ResBlock3, self).__init__()
+        self.channels_in = channels*2
+        self.h = h
+        self.convs1 = nn.ModuleList([
+            weight_norm(Conv1d(self.channels_in, channels, kernel_size, 1, dilation=dilation[0],
+                               padding=get_padding(kernel_size, dilation[0]))),
+            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=dilation[1],
+                               padding=get_padding(kernel_size, dilation[1]))),
+            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=dilation[2],
+                               padding=get_padding(kernel_size, dilation[2])))
+        ])
+        self.convs1.apply(init_weights)
+
+        self.convs2 = nn.ModuleList([
+            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=1,
+                               padding=get_padding(kernel_size, 1))),
+            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=1,
+                               padding=get_padding(kernel_size, 1))),
+            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=1,
+                               padding=get_padding(kernel_size, 1)))
+        ])
+        self.convs2.apply(init_weights)
+
+    def forward(self, x):
+
+        flag = True
+        for c1, c2 in zip(self.convs1, self.convs2):
+            if flag:
+                x = F.leaky_relu(x, LRELU_SLOPE)
+                x = c1(x)
+                x = F.leaky_relu(x, LRELU_SLOPE)
+                x = c2(x)
+                flag = False
+                continue
+            xt = F.leaky_relu(x, LRELU_SLOPE)
+            xt = c1(xt)
+            xt = F.leaky_relu(xt, LRELU_SLOPE)
+            xt = c2(xt)
+            x = xt + x
+        return x
+
+    def remove_weight_norm(self):
+        for l in self.convs1:
+            remove_weight_norm(l)
+        for l in self.convs2:
+            remove_weight_norm(l)
+
+
 class Generator(torch.nn.Module):
     def __init__(self, h):
         super(Generator, self).__init__()
@@ -81,7 +131,14 @@ class Generator(torch.nn.Module):
         self.conv_pre = weight_norm(Conv1d(80, h.upsample_initial_channel, 7, 1, padding=3))
         self.conv_pre_sine_pitch = weight_norm(Conv1d(80, h.upsample_initial_channel, 7, 1, padding=3))
 
-        resblock = ResBlock1 if h.resblock == '1' else ResBlock2
+        if h.resblock == '1':
+            resblock = ResBlock1
+        elif h.resblock == '2':
+            resblock = ResBlock2
+        else:
+            resblock = ResBlock3
+
+        resblock_pitch = ResBlock1
 
         #pitch down sample layers
         # self.down_p_t0 = nn.Conv1d(80, pdim, 3, stride=1, padding=1)
@@ -112,13 +169,26 @@ class Generator(torch.nn.Module):
         for i in range(len(self.ups)):
             ch = h.upsample_initial_channel // (2 ** (i + 1))
             for j, (k, d) in enumerate(zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes)):
-                self.resblocks_pitch.append(resblock(h, ch, k, d))
+                self.resblocks_pitch.append(resblock_pitch(h, ch, k, d))
 
         self.conv_post = weight_norm(Conv1d(ch, 1, 7, 1, padding=3))
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
 
-    def forward(self, x, y_sine_pitch_mel):
+    def concat_inputs(self, read, pitch, in_inference=False):
+        channels = read.size(dim=1)
+        time = read.size(dim=2)
+        if not in_inference:
+            device = torch.device('cuda:{:d}'.format(0))
+        else:
+            device = None
+        result = torch.zeros([self.h.batch_size, channels*2, time], device=device)
+        for i in range(channels):
+            result[:, 2 * i + 1, :] = pitch[:, i, :]
+            result[:, 2 * i, :] = read[:, i, :]
+        return result
+
+    def forward(self, x, y_sine_pitch_mel, in_inference=False):
         x = self.conv_pre(x)
         y = self.conv_pre_sine_pitch(y_sine_pitch_mel)
         for i in range(self.num_upsamples):
@@ -126,6 +196,7 @@ class Generator(torch.nn.Module):
             x = self.ups[i](x)
             y = F.leaky_relu(y, LRELU_SLOPE)
             y = self.ups_sine_pitch[i](y)
+            x = self.concat_inputs(x, y, in_inference)
             # x = (x + y) / 2 #V1
             xs = None
             for j in range(self.num_kernels):
@@ -135,10 +206,9 @@ class Generator(torch.nn.Module):
                 else:
                     xs += self.resblocks[i*self.num_kernels+j](x)
                     ys += self.resblocks_pitch[i * self.num_kernels + j](y) #V3
-            ys = ys / self.num_kernels
             x = xs / self.num_kernels
-            # y = ys /self.num_kernels
-            x = (x + ys) / 2  # V2
+            y = ys / self.num_kernels
+            # x = (x + ys) / 2  # V2
         x = F.leaky_relu(x)
         x = self.conv_post(x)
         x = torch.tanh(x)

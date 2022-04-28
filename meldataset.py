@@ -251,7 +251,7 @@ class MelDataset(torch.utils.data.Dataset):
                                        self.upsample_rates, center=False)
 
         return mel_read.squeeze(), audio_sing.squeeze(0), filename_read, \
-               mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing, pitch_file_path, sine_pitch_mel
+               mel_sing_loss.squeeze(), sampling_rate_read, sampling_rate_sing, pitch_file_path, sine_pitch_mel.squeeze()
         #
     def __len__(self):
         return len(self.audio_files)
