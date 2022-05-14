@@ -26,8 +26,8 @@ import glob
 
 torch.backends.cudnn.benchmark = True
 
-from numba import cuda
-from GPUtil import showUtilization as gpu_usage
+# from numba import cuda
+# from GPUtil import showUtilization as gpu_usage
 
 def train(rank, a, h):
     if h.num_gpus > 1:
