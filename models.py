@@ -125,11 +125,15 @@ class Generator(torch.nn.Module):
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
 
-    def forward(self, x, y_sine_pitch_mel):
+    def forward(self, x, y_sine_pitch_mel, in_inference=False):
         x = self.conv_pre(x)
         y = y_sine_pitch_mel
         for i in range(self.num_upsamples):
             y = self.downs_sin_pitch[i](y)
+        if in_inference:
+            conv_test_output = y
+        else:
+            conv_test_output = None
         y = self.conv_pre_sine_pitch(y)
         for i in range(self.num_upsamples):
             x = F.leaky_relu(x, LRELU_SLOPE)
@@ -153,7 +157,7 @@ class Generator(torch.nn.Module):
         x = self.conv_post(x)
         x = torch.tanh(x)
 
-        return x
+        return x, conv_test_output
 
     def remove_weight_norm(self):
         print('Removing weight norm...')

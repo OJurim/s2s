@@ -10,7 +10,7 @@ from scipy.io.wavfile import write
 from env import AttrDict
 from meldataset import mel_spectrogram, MAX_WAV_VALUE, load_wav
 from models import Generator
-
+from matplotlib import pyplot as plt
 import librosa
 import soundfile as sf
 
@@ -71,19 +71,36 @@ def inference(a):
             x = get_mel(wav.unsqueeze(0))
             pitch = pitch / MAX_WAV_VALUE
             pitch = torch.FloatTensor(pitch).to(device)
+            pitch_melspec = get_mel(pitch.unsqueeze(0))
 
             upsample_factor = np.prod(h.upsample_rates, initial=1)
             if (len(pitch.squeeze(0)) % upsample_factor) != 0:
                 padding_size = (0, upsample_factor - (len(pitch.squeeze(0)) % upsample_factor))
                 pitch = torch.nn.functional.pad(pitch, padding_size, mode='constant', value=0).unsqueeze(0)
 
-            # pitch = get_mel(pitch.unsqueeze(0))
-            y_g_hat = generator(x, pitch.unsqueeze(0))
+            y_g_hat, pitch_conv_output = generator(x, pitch.unsqueeze(0), in_inference=True)
+            min_amplitude = min(torch.min(pitch_conv_output), torch.min(pitch_melspec))
+            max_amplitude = max(torch.max(pitch_conv_output), torch.max(pitch_melspec))
+            fig, (ax1, ax2) = plt.subplots(1, 2)
+            im1 = ax1.matshow(np.asarray(pitch_conv_output.squeeze(0)), vmin=min_amplitude, vmax=max_amplitude) #, extent=[0, 80, 0, pitch_conv_output.size(dim=1)])
+            plt.title('conv output')
+            ax1.invert_yaxis()
+            im2 = ax2.matshow(np.asarray(pitch_melspec.squeeze(0)),  vmin=min_amplitude, vmax=max_amplitude) #, extent=[0, 80, 0, pitch_conv_output.size(dim=1)])
+            plt.title('mel spec')
+            ax2.invert_yaxis()
+            plt.colorbar(im2, ax=[ax1, ax2])
+
+            conv_filename = filename.split('.')
+            conv_filename = conv_filename[0]
+            plt.suptitle(conv_filename)
+            fig.savefig(a.output_dir + "/conv_results/" + conv_filename)
             audio = y_g_hat.squeeze()
             audio = audio * MAX_WAV_VALUE
             audio = audio.cpu().numpy().astype('int16')
 
             output_file = os.path.join(a.output_dir, os.path.splitext(filename)[0] + '_generated.wav')
+
+
             write(output_file, sr, audio)
             # sf.write(output_file, audio, sr)
             print(output_file)
