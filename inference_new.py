@@ -56,6 +56,8 @@ def inference(a):
     generator.remove_weight_norm()
     with torch.no_grad():
         for i, filename in enumerate(filelist):
+            if filename.endswith('sing.wav'):
+                continue
             wav, sr = load_wav(os.path.join(a.input_wavs_dir, filename))
             pitch_filename = filename.replace('read', 'sine_pitch')
             pitch, _ = load_wav(os.path.join(a.input_pitch_dir, pitch_filename))
@@ -77,23 +79,24 @@ def inference(a):
             if (len(pitch.squeeze(0)) % upsample_factor) != 0:
                 padding_size = (0, upsample_factor - (len(pitch.squeeze(0)) % upsample_factor))
                 pitch = torch.nn.functional.pad(pitch, padding_size, mode='constant', value=0).unsqueeze(0)
+            in_inference = False
+            y_g_hat, pitch_conv_output = generator(x, pitch.unsqueeze(0), in_inference=in_inference)
+            if in_inference:
+                min_amplitude = min(torch.min(pitch_conv_output), torch.min(pitch_melspec))
+                max_amplitude = max(torch.max(pitch_conv_output), torch.max(pitch_melspec))
+                fig, (ax1, ax2) = plt.subplots(1, 2)
+                im1 = ax1.matshow(np.asarray(pitch_conv_output.squeeze(0)), vmin=min_amplitude, vmax=max_amplitude) #, extent=[0, 80, 0, pitch_conv_output.size(dim=1)])
+                plt.title('conv output')
+                ax1.invert_yaxis()
+                im2 = ax2.matshow(np.asarray(pitch_melspec.squeeze(0)),  vmin=min_amplitude, vmax=max_amplitude) #, extent=[0, 80, 0, pitch_conv_output.size(dim=1)])
+                plt.title('mel spec')
+                ax2.invert_yaxis()
+                plt.colorbar(im2, ax=[ax1, ax2])
+                conv_filename = filename.split('.')
+                conv_filename = conv_filename[0]
+                plt.suptitle(conv_filename)
+                fig.savefig(a.output_dir + "/conv_results/" + conv_filename)
 
-            y_g_hat, pitch_conv_output = generator(x, pitch.unsqueeze(0), in_inference=True)
-            min_amplitude = min(torch.min(pitch_conv_output), torch.min(pitch_melspec))
-            max_amplitude = max(torch.max(pitch_conv_output), torch.max(pitch_melspec))
-            fig, (ax1, ax2) = plt.subplots(1, 2)
-            im1 = ax1.matshow(np.asarray(pitch_conv_output.squeeze(0)), vmin=min_amplitude, vmax=max_amplitude) #, extent=[0, 80, 0, pitch_conv_output.size(dim=1)])
-            plt.title('conv output')
-            ax1.invert_yaxis()
-            im2 = ax2.matshow(np.asarray(pitch_melspec.squeeze(0)),  vmin=min_amplitude, vmax=max_amplitude) #, extent=[0, 80, 0, pitch_conv_output.size(dim=1)])
-            plt.title('mel spec')
-            ax2.invert_yaxis()
-            plt.colorbar(im2, ax=[ax1, ax2])
-
-            conv_filename = filename.split('.')
-            conv_filename = conv_filename[0]
-            plt.suptitle(conv_filename)
-            fig.savefig(a.output_dir + "/conv_results/" + conv_filename)
             audio = y_g_hat.squeeze()
             audio = audio * MAX_WAV_VALUE
             audio = audio.cpu().numpy().astype('int16')
@@ -111,7 +114,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_wavs_dir', default='test_files')
-    parser.add_argument('--input_pitch_dir', default='/home/ohadmochly@staff.technion.ac.il/git_repo/small_data_files/sine_pitch/')
+    parser.add_argument('--input_pitch_dir', default='')
     parser.add_argument('--output_dir', default='generated_files')
     parser.add_argument('--checkpoint_file', required=True)
     a = parser.parse_args()

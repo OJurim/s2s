@@ -1,4 +1,7 @@
 import warnings
+
+import numpy as np
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import itertools
 import matplotlib
@@ -22,12 +25,13 @@ from models import Generator, MultiPeriodDiscriminator, MultiScaleDiscriminator,
 from utils import plot_spectrogram, scan_checkpoint, load_checkpoint, save_checkpoint
 from f0_package import crepe_pytorch, sampling, spectral_feats
 import glob
-
+import librosa
+import speechpy
 
 torch.backends.cudnn.benchmark = True
 
 from numba import cuda
-from GPUtil import showUtilization as gpu_usage
+# from GPUtil import showUtilization as gpu_usage
 
 def train(rank, a, h):
     if h.num_gpus > 1:
@@ -144,7 +148,7 @@ def train(rank, a, h):
 
             # print(sum([p.numel() for p in generator.parameters() if p.requires_grad]))
 
-            y_g_hat = generator(x, y_sine_pitch_mel)
+            y_g_hat, _ = generator(x, y_sine_pitch_mel)
 
             # temporary padding for size matching
             # pad_size = y.shape[2] - y_g_hat.shape[2]
@@ -232,12 +236,14 @@ def train(rank, a, h):
             loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
 
             loss_energy = 0
+            #add preemphasis
+            # y_g_hat_filt = speechpy.processing.preemphasis(y_g_hat)
+            # y_g_hat_filt = librosa.effects.preemphasis(np.ndarray(y_g_hat))
             # loss_energy = F.l1_loss(abs(y), abs(y_g_hat), reduction='none') # vector of l1 differences
             # loss_energy = loss_energy/torch.max(loss_energy) # normalization
             # loss_energy = torch.sum(loss_energy)/loss_energy.size(dim=2) # mean
             # loss_energy = F.l1_loss(abs(y), abs(y_g_hat))
             loss_waveform = F.l1_loss(y, y_g_hat)
-
             # 10.9.21
 
             loss_gen_all = h.loss_gen_s_w*loss_gen_s + h.loss_gen_f_w*loss_gen_f + h.loss_fm_s_w*loss_fm_s + \
@@ -272,6 +278,7 @@ def train(rank, a, h):
                     minimal_loss_gen_total = loss_gen_all
                     save_best_gen = True
                     path_best = os.path.join(a.checkpoint_path, "best")
+                    print(f"loss is: {loss_gen_all}")
                     if not os.path.exists(path_best):
                         os.mkdir(path_best)
 

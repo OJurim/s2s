@@ -6,42 +6,21 @@ import resize_right
 import os
 import argparse
 
-from scipy.signal import butter, lfilter, freqz
-import matplotlib.pyplot as plt
 
 device = torch.device(0)
 
 
-def butter_lowpass(cutoff, fs, order=5):
-    nyq = 0.5 * fs
-    normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
-    return b, a
-
-
-def butter_lowpass_filter(data, cutoff, fs, order=5):
-    b, a = butter_lowpass(cutoff, fs, order=order)
-    y = lfilter(b, a, data)
-    return y
-
-
 def sine_pitch_extract(file_path):
     wav_file, sr = sf.read(file_path)
-    time, pitch, _, _ = crepe.predict(wav_file, sr, verbose=0, viterbi=True)
-    # np.savetxt('sine_pitch_out_test/pitch_test.txt', pitch)
+    wav_file[wav_file <= 0.0001] = 0
+    time, pitch, conf, _ = crepe.predict(wav_file, sr, verbose=0, viterbi=True)
     resampled_pitch = resize_right.resize(torch.Tensor(pitch), out_shape=(len(wav_file),))
-    # np.savetxt('sine_pitch_out_test/resampled_long_pitch_test.txt', resampled_pitch)
-
-    # filtered_pitch = butter_lowpass_filter(resampled_pitch, cutoff=15, fs=sr, order=6)
-    # np.savetxt('sine_pitch_out_test/filtered_pitch_test.txt', filtered_pitch)
-
     sine_pitch = np.sin(2*np.pi*np.cumsum(resampled_pitch)/sr)
-    # np.savetxt('sine_pitch_out_test/sine_pitch_test.txt', sine_pitch)
 
     return sine_pitch, sr
 
 
-def extract_and_save_sine_pitch(wav_path, output_dir, in_type="dir"):
+def extract_and_save_sine_pitch(wav_path, results_dir, in_type="dir"):
     wav_path = wav_path.strip()  # removing redundant backspaces
     file_name = os.path.basename(os.path.normpath(wav_path))  # the basename of the file
     if in_type == "file":
@@ -53,7 +32,7 @@ def extract_and_save_sine_pitch(wav_path, output_dir, in_type="dir"):
         sine_pitch, sr = sine_pitch_extract(file_path)
         out_file_name = file_name.replace('read', 'sine_pitch')
 
-    out_file_path = output_dir + "/" + out_file_name
+    out_file_path = results_dir + "/" + out_file_name
     sf.write(out_file_path, sine_pitch, sr)
 
 
@@ -61,13 +40,17 @@ def main(wav_path, txt_path, output_dir):
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
 
+    results_dir = output_dir + '/sine_pitch_results/'
+    if not (os.path.exists(results_dir)):
+        os.makedirs(results_dir)
+
     if os.path.isfile(wav_path):
-        extract_and_save_sine_pitch(wav_path, output_dir, in_type="file")
+        extract_and_save_sine_pitch(wav_path, results_dir, in_type="file")
     else:
         with open(txt_path, "r") as names_file:
             for line in names_file:
                 file_path = wav_path+line
-                extract_and_save_sine_pitch(file_path, output_dir)
+                extract_and_save_sine_pitch(file_path, results_dir)
 
 
 if __name__ == '__main__':
