@@ -56,7 +56,7 @@ def inference(a):
     generator.remove_weight_norm()
     with torch.no_grad():
         for i, filename in enumerate(filelist):
-            if filename.endswith('sing.wav'):
+            if not filename.endswith('read.wav'):
                 continue
             wav, sr = load_wav(os.path.join(a.input_wavs_dir, filename))
             pitch_filename = filename.replace('read', 'sine_pitch')
@@ -79,7 +79,7 @@ def inference(a):
             if (len(pitch.squeeze(0)) % upsample_factor) != 0:
                 padding_size = (0, upsample_factor - (len(pitch.squeeze(0)) % upsample_factor))
                 pitch = torch.nn.functional.pad(pitch, padding_size, mode='constant', value=0).unsqueeze(0)
-            in_inference = False
+            in_inference = True
             y_g_hat, pitch_conv_output = generator(x, pitch.unsqueeze(0), in_inference=in_inference)
             if in_inference:
                 min_amplitude = min(torch.min(pitch_conv_output), torch.min(pitch_melspec))
@@ -88,10 +88,11 @@ def inference(a):
                 im1 = ax1.matshow(np.asarray(pitch_conv_output.squeeze(0)), vmin=min_amplitude, vmax=max_amplitude) #, extent=[0, 80, 0, pitch_conv_output.size(dim=1)])
                 plt.title('conv output')
                 ax1.invert_yaxis()
+                plt.colorbar(im1, ax=[ax1])
                 im2 = ax2.matshow(np.asarray(pitch_melspec.squeeze(0)),  vmin=min_amplitude, vmax=max_amplitude) #, extent=[0, 80, 0, pitch_conv_output.size(dim=1)])
                 plt.title('mel spec')
                 ax2.invert_yaxis()
-                plt.colorbar(im2, ax=[ax1, ax2])
+                plt.colorbar(im2, ax=[ax2])
                 conv_filename = filename.split('.')
                 conv_filename = conv_filename[0]
                 plt.suptitle(conv_filename)
@@ -120,7 +121,7 @@ def main():
     a = parser.parse_args()
 
     # config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'generated/archive/config.json')
-    config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config_v1_f0.json')
+    config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config.json')
     with open(config_file) as f:
         data = f.read()
 

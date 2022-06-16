@@ -152,7 +152,8 @@ class Generator(torch.nn.Module):
             ys = ys / self.num_kernels
             x = xs / self.num_kernels
             # y = ys /self.num_kernels
-            x = (x + ys) / 2  # V2
+            if i > 0:
+                x = (x + ys) / 2  # V2 # V4
         x = F.leaky_relu(x)
         x = self.conv_post(x)
         x = torch.tanh(x)

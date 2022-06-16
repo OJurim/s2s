@@ -26,7 +26,6 @@ from utils import plot_spectrogram, scan_checkpoint, load_checkpoint, save_check
 from f0_package import crepe_pytorch, sampling, spectral_feats
 import glob
 import librosa
-import speechpy
 
 torch.backends.cudnn.benchmark = True
 
