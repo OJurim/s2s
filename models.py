@@ -103,6 +103,14 @@ class Generator(torch.nn.Module):
                                 k, u, padding=(k-u)//2)))
             num_of_channels = ((num_of_channels+20)//20)*20
 
+        self.spec_layers = nn.ModuleList()
+        num_of_channels = 80
+        for i, (u, k) in enumerate(zip(h.spec_layer_stride, h.spec_layer_kernel)):
+            self.spec_layers.append(weight_norm(
+                Conv1d(num_of_channels, num_of_channels,
+                       k, u, padding=(k - u) // 2)))
+
+
         self.ups_sine_pitch = nn.ModuleList()
         for i, (u, k) in enumerate(zip(h.upsample_rates, h.upsample_kernel_sizes)):
             self.ups_sine_pitch.append(weight_norm(
@@ -126,6 +134,8 @@ class Generator(torch.nn.Module):
         self.conv_post.apply(init_weights)
 
     def forward(self, x, y_sine_pitch_mel, in_inference=False):
+        # for i in range(len(self.spec_layers)):
+        #     x = self.spec_layers[i](x)
         x = self.conv_pre(x)
         y = y_sine_pitch_mel
         for i in range(self.num_upsamples):

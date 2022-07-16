@@ -121,7 +121,7 @@ def main():
     a = parser.parse_args()
 
     # config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'generated/archive/config.json')
-    config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config.json')
+    config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config_v1_f0.json')
     with open(config_file) as f:
         data = f.read()
 

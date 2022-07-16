@@ -1,7 +1,7 @@
 {
     "resblock": "1",
     "num_gpus": 0,
-    "batch_size": 8,
+    "batch_size": 16,
     "learning_rate": 0.0002,
     "adam_b1": 0.8,
     "adam_b2": 0.99,
@@ -10,7 +10,7 @@
 
     "f0_hp": 45,
     "pitch_loss": false,
-    "mel_loss_w": 5,
+    "mel_loss_w": 45,
     "loss_fm_f_w": 1,
     "loss_fm_s_w": 1,
     "loss_gen_f_w": 1,
@@ -18,7 +18,7 @@
     "calc_pitch_loss_steps_denom": 5,
     "minimal_steps_for_best": 700,
     "loss_energy_w": 0,
-    "loss_waveform_w": 0,
+    "loss_waveform_w": 60,
 
     "upsample_rates": [8,8,2,2],
     "upsample_kernel_sizes": [16,16,4,4],

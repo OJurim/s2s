@@ -26,6 +26,8 @@
     "resblock_kernel_sizes": [3,7,11],
     "resblock_dilation_sizes": [[1,3,5], [1,3,5], [1,3,5]],
 
+    "spec_layer_stride": [4,4,8],
+    "spec_layer_kernel": [1024,256,32],
     "segment_size": 24001,
     "num_mels": 80,
     "num_freq": 1025,

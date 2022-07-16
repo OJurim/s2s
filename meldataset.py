@@ -55,9 +55,11 @@ def mel_spectrogram(y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin,
 
     # padding to length of multiplication of 256 (to fit generator up sampling layers)
     upsample_factor = np.prod(upsample_rates, initial=1)
+    # if (y.shape[1] % upsample_factor) != 0:
     if (len(y.squeeze(0)) % upsample_factor) != 0:
         padding_size = (0, upsample_factor - (len(y.squeeze(0)) % upsample_factor))
         y = torch.nn.functional.pad(y, padding_size, mode='constant', value=0)
+        y = y.squeeze(0)
 
     global mel_basis, hann_window
     if fmax not in mel_basis:
@@ -193,6 +195,10 @@ class MelDataset(torch.utils.data.Dataset):
         if (len(audio_sing.squeeze(0)) % upsample_factor) != 0:
             padding_size = (0, upsample_factor - (len(audio_sing.squeeze(0)) % upsample_factor))
             audio_sing = torch.nn.functional.pad(audio_sing, padding_size, mode='constant', value=0)
+
+        if (len(audio_read.squeeze(0)) % upsample_factor) != 0:
+            padding_size = (0, upsample_factor - (len(audio_read.squeeze(0)) % upsample_factor))
+            audio_read = torch.nn.functional.pad(audio_read, padding_size, mode='constant', value=0)
 
         # print(audio_read.shape)
         # print(audio_sing.shape)
